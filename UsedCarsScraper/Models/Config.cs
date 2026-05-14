@@ -4,5 +4,6 @@
     {
         public List<Make> Makes { get; set; } = [];
         public List<string>? Dates { get; set; }
+        public Dictionary<string,string> FuelTypes { get; set; }
     }
 }

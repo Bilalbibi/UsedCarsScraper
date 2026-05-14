@@ -24,26 +24,27 @@ public class StandVirtualService
         @"\b(?:19|20)\d{2}\b", 
         RegexOptions.Compiled | RegexOptions.CultureInvariant
     );
-    public async Task Start(List<InputModel> inputs, IProgress<(int Percentage, string Message)> progress = null)
+    public async Task Start(List<InputModel> inputs, IProgress<(int Percentage, string Message)> progress = null, CancellationToken cancellationToken = default)
     {
-        // var car = await GetDetails(
-        //     "https://www.standvirtual.com/carros/anuncio/bmw-ix-ver-xdrive-50-pack-desportivo-ID8PKQHc.html");
-        // return;
         var cars = new List<Car>();
         foreach (var input in inputs)
         {
-            cars.AddRange(await StartScraping(input, progress));
-            await Task.Delay(2000);
-            progress.Report((0, ""));
-        }
+            // Check for cancellation before processing next input
+            cancellationToken.ThrowIfCancellationRequested();
 
+            cars.AddRange(await StartScraping(input, progress, cancellationToken));
+        
+            // Pass token to delay
+            await Task.Delay(2000, cancellationToken);
+            progress?.Report((0, ""));
+        }
+        
         var json = JsonConvert.SerializeObject(cars, Formatting.Indented);
-        await File.WriteAllTextAsync($"json outputs/Standvirtual_cars_json_{DateTime.Now:dd_MM_yyyy mm_ss}", json);
-        cars.SaveToExcel($"outputs/cars_{DateTime.Now:dd_MM_yyyy mm_ss}.xlsx");
+        await File.WriteAllTextAsync($"Standvirtual json outputs/Standvirtual_cars_json_{DateTime.Now:dd_MM_yyyy_mm_ss}.json", json, cancellationToken);
+        cars.SaveToExcel($"Standvirtual outputs/Standvirtual_cars_{DateTime.Now:dd_MM_yyyy_mm_ss}.xlsx");
     }
 
-    private async Task<List<Car>> StartScraping(InputModel input,
-        IProgress<(int Percentage, string Message)> progress = null)
+    private async Task<List<Car>> StartScraping(InputModel input, IProgress<(int Percentage, string Message)> progress = null, CancellationToken cancellationToken = default)
     {
         var querySb = new StringBuilder();
         querySb.Append($"/{input.Make.Name?.ToLower()}/");
@@ -58,7 +59,7 @@ public class StandVirtualService
             querySb.Append($"&search%5Bfilter_float_first_registration_year%3Ato%5D={input.ToDate}");
         }
 
-        querySb.Append("?search%5Bfilter_enum_fuel_type%5D=electric");
+        querySb.Append($"?search%5Bfilter_enum_fuel_type%5D={input.FuelType}");
         if (input.Model != null)
         {
             var modelName = input.Model.Name?.ToLower().Replace(" ", "-");
@@ -183,8 +184,8 @@ public class StandVirtualService
         var cars = new List<Car>();
         for (var i = 0; i < pages; i++)
         {
+            cancellationToken.ThrowIfCancellationRequested(); 
             url = $"{_baseUrl}{query}&page={page}";
-
             response = await _client.Get(url, 5, [
                 new KeyValuePair<string, string>("user-agent",
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36")
@@ -197,7 +198,8 @@ public class StandVirtualService
 
             foreach (var carUrl in carsUrl)
             {
-                var car = await GetDetails(carUrl);
+                cancellationToken.ThrowIfCancellationRequested();
+                var car = await GetDetails(carUrl, cancellationToken);
                 cars.Add(car);
                 var message = $"{cars.Count} cars scraped/{numberOfCars} ==> input: {input.Make}/{input.Model}";
                 if (progress == null || totalCars <= 0) continue;
@@ -252,8 +254,9 @@ public class StandVirtualService
         return cars;
     }
 
-    public async Task<Car> GetDetails(string carUrl)
+    public async Task<Car> GetDetails(string carUrl, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         Car? car = null;
         try
         {

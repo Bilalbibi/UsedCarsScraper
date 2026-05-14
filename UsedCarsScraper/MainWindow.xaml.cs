@@ -19,7 +19,7 @@ public partial class MainWindow : INotifyPropertyChanged
 
     private List<InputModel> inputModels = [];
     private List<Car> cars = [];
-
+    private CancellationTokenSource _cts;
     public Config? AppConfig
     {
         get;
@@ -57,93 +57,124 @@ public partial class MainWindow : INotifyPropertyChanged
         }
     }
 
-    private async void StartButton_Click(object sender, RoutedEventArgs e)
+   private async void StartButton_Click(object sender, RoutedEventArgs e)
+{
+    StandvirtualGrid.CommitEdit(DataGridEditingUnit.Row, true);
+    StandvirtualGrid.CancelEdit();
+
+    var models = new List<InputModel>();
+    foreach (var t in Filters)
     {
-        var btn = sender as Button;
-        if (btn != null) btn.IsEnabled = false;
+        models.Add(t);
+    }
 
-        foreach (var t in StandvirtualGrid.Items)
-        {
-            if (t is InputModel input) inputModels.Add(input);
-        }
+    var hasNullProp = models.Any(x => x?.Make == null || x?.Model == null);
+    if (hasNullProp)
+    {
+        MessageBox.Show("Please make sure you selected Make and model for each input", "Reminding");
+        return;
+    }
 
-        var hasNullProp = inputModels.Any(x => x?.Make == null || x?.Model == null);
-        if (hasNullProp)
-        {
-            CustomMessageBox.Show("Please make sure you selected Make and model for each input", "Reminding");
-            btn?.IsEnabled = true;
-            return;
-        }
-        var json = JsonConvert.SerializeObject(inputModels,Formatting.Indented);
-        await File.WriteAllTextAsync($"configs/{DateTime.Now:dd_MM_yyyy mm_ss}_StandVirtual config file", json);
-        var standVirtualService = new StandVirtualService();
-        //await standVirtualService.GetDetails("https://www.standvirtual.com/carros/anuncio/citroen-ds5-ver-5-2-0-hdi-hybrid4-sport-chic-cmp6-ID8PVTye.html");
+    StartBtn.IsEnabled = false;
+    StopBtn.IsEnabled = true;
 
-        // NEW: Create the Progress object (this safely updates the UI thread)
-        var progressReporter = new Progress<(int Percentage, string Message)>(info =>
-        {
-            MainProgressBar.Value = info.Percentage;
-            ProgressLabel.Text = info.Message;
-            var timeStamp = DateTime.Now.ToString("HH:mm:ss");
-            LogTextBox.AppendText($"[{timeStamp}] {info.Message}\r\n");
-            LogTextBox.ScrollToEnd();
-        });
+    _cts = new CancellationTokenSource();
+    var token = _cts.Token;
 
+    var json = JsonConvert.SerializeObject(models, Formatting.Indented);
+    await File.WriteAllTextAsync($"Standvirtual configs/{DateTime.Now:dd_MM_yyyy_mm_ss}_StandVirtual_config_file.json", json, token);
+
+    var standVirtualService = new StandVirtualService();
+    
+    var progressReporter = new Progress<(int Percentage, string Message)>(info =>
+    {
+        MainProgressBar.Value = info.Percentage;
+        ProgressLabel.Text = info.Message;
+        var timeStamp = DateTime.Now.ToString("HH:mm:ss");
+        LogTextBox.AppendText($"[{timeStamp}] {info.Message}\r\n");
+        LogTextBox.ScrollToEnd();
+    });
+
+    try
+    {
         do
         {
+            // Throw if user clicked Stop while we were waiting
+            token.ThrowIfCancellationRequested(); 
+
             MainProgressBar.Value = 0;
-
-            inputModels = [];
-            for (var i = 0; i < StandvirtualGrid.Items.Count; i++)
-            {
-                var input = StandvirtualGrid.Items[i] as InputModel;
-                if (input != null) inputModels.Add(input);
-            }
-
             var d2 = new DateTime();
             var d1 = DateTime.Now;
             var days = 1;
-            if (Daily.IsChecked == true)
-            {
-                d2 = DateTime.Now.AddDays(1);
-            }
-
+            
+            if (Daily.IsChecked == true) d2 = DateTime.Now.AddDays(1);
             if (ThreeDays.IsChecked == true)
             {
                 days = 3;
                 d2 = DateTime.Now.AddDays(3);
             }
 
-            await standVirtualService.Start(inputModels, progressReporter);
+            // PASS THE TOKEN TO THE SERVICE
+            await standVirtualService.Start(models, progressReporter, token);
+            
             MainProgressBar.Value = 100;
-            LogTextBox.AppendText($"work done for today next run will be {DateTime.Now.AddDays(days):dd/MM/yyyy hh:mm:ss}");
-            btn?.IsEnabled = true;
+            var nextRunMsg = $"Work done for today. Next run will be {DateTime.Now.AddDays(days):dd/MM/yyyy hh:mm:ss}";
+            ProgressLabel.Text = nextRunMsg;
+            LogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {nextRunMsg}\r\n");
             var delay = (int)(d2 - d1).TotalSeconds;
-            await Task.Delay(TimeSpan.FromSeconds(delay));
+            StartBtn.IsEnabled = true;
+            await Task.Delay(TimeSpan.FromSeconds(delay), token);
+            
         } while (true);
     }
+    catch (OperationCanceledException)
+    {
+        // THIS CATCHES THE STOP BUTTON CLICK
+        ProgressLabel.Text = "Scraping stopped by user.";
+        LogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] Scraping stopped by user.\r\n");
+        MainProgressBar.Value = 0;
+    }
+    catch (Exception ex)
+    {
+        ProgressLabel.Text = $"Error: {ex.Message}";
+        MessageBox.Show(ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+    }
+    finally
+    {
+        // RESET BUTTONS
+        StartBtn.IsEnabled = true;
+        StopBtn.IsEnabled = false;
+        _cts?.Dispose();
+        _cts = null;
+    }
+}
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
-        var configsScraper= new ConfigsScraper();
-        await configsScraper.StandVirtualConfigurationsScraper();
-        return;
-        if (!Directory.Exists("configs"))
+        // var configsScraper= new ConfigsScraper();
+        // await configsScraper.StandVirtualConfigurationsScraper();
+        // return;
+        if (!Directory.Exists("Standvirtual configs"))
         {
-            Directory.CreateDirectory("configs");
+            Directory.CreateDirectory("Standvirtual configs");
         }
-        if (!Directory.Exists("json outputs"))
+        if (!Directory.Exists("Standvirtual json outputs"))
         {
-            Directory.CreateDirectory("json outputs");
+            Directory.CreateDirectory("Standvirtual json outputs");
         }
-        if (!Directory.Exists("outputs"))
+        if (!Directory.Exists("Standvirtual outputs"))
         {
-            Directory.CreateDirectory("outputs");
+            Directory.CreateDirectory("Standvirtual outputs");
         }
         var json = await File.ReadAllTextAsync("StandVirtual config file");
         AppConfig = JsonConvert.DeserializeObject<Config>(json);
         OnPropertyChanged(nameof(AppConfig));
         Daily.IsChecked = true;
+
+        if (File.Exists("last_StandVirtual_config_file"))
+        {
+            LoadCache();
+        }
     }
 
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
@@ -181,6 +212,121 @@ public partial class MainWindow : INotifyPropertyChanged
         {
             rowData.Make = selectedMake;
             rowData.OnPropertyChanged(nameof(rowData.Models));
+        }
+    }
+    private void Model_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        var modelCombo = sender as ComboBox;
+        var rowData = modelCombo?.DataContext as InputModel;
+    
+        // Ensure we are getting the actual Model object
+        if (modelCombo?.SelectedItem is Model selectedModel && rowData != null)
+        {
+            rowData.Model = selectedModel; // Assign full object
+        
+            System.Diagnostics.Debug.WriteLine($"Successfully assigned Model {selectedModel.Name}. SubModels count: {selectedModel.SubModels?.Count ?? 0}");
+        
+            // Force the SubModel dropdown to refresh
+            rowData.OnPropertyChanged(nameof(rowData.SubModels));
+        }
+    }
+private void SaveCache()
+{
+    try
+    {
+        // Force the DataGrid to commit any cell currently being edited
+        StandvirtualGrid.CommitEdit(DataGridEditingUnit.Row, true);
+        StandvirtualGrid.CancelEdit();
+
+        // Serialize and save to a local file
+        var json = JsonConvert.SerializeObject(Filters, Formatting.Indented);
+        File.WriteAllText("last_StandVirtual_config_file", json);
+    }
+    catch (Exception ex)
+    {
+        System.Diagnostics.Debug.WriteLine($"Failed to save cache: {ex.Message}");
+    }
+}
+
+private void LoadCache()
+{
+    try
+    {
+        if (File.Exists("last_StandVirtual_config_file"))
+        {
+            var json = File.ReadAllText("last_StandVirtual_config_file");
+            var cachedFilters = JsonConvert.DeserializeObject<List<InputModel>>(json);
+
+            if (cachedFilters != null && cachedFilters.Count > 0)
+            {
+                Filters.Clear();
+
+                foreach (var cacheItem in cachedFilters)
+                {
+                    // --- THE FIX: Save the names BEFORE the setters wipe them out ---
+                    string cachedMakeName = cacheItem.Make?.Name;
+                    string cachedModelName = cacheItem.Model?.Name;
+                    string cachedSubModelName = cacheItem.SubModel?.Name;
+
+                    if (cachedMakeName != null && AppConfig?.Makes != null)
+                    {
+                        // 1. Find and assign Make (This will trigger Model = null internally)
+                        var realMake = AppConfig.Makes.FirstOrDefault(m => m.Name == cachedMakeName);
+                        if (realMake != null)
+                        {
+                            cacheItem.Make = realMake;
+
+                            // 2. Find and assign Model using our saved string (This will trigger SubModel = null)
+                            if (cachedModelName != null)
+                            {
+                                var realModel = realMake.Models.FirstOrDefault(m => m.Name == cachedModelName);
+                                if (realModel != null)
+                                {
+                                    cacheItem.Model = realModel;
+
+                                    // 3. Find and assign SubModel using our saved string
+                                    if (cachedSubModelName != null)
+                                    {
+                                        var realSubModel = realModel.SubModels.FirstOrDefault(s => s.Name == cachedSubModelName);
+                                        if (realSubModel != null)
+                                        {
+                                            cacheItem.SubModel = realSubModel;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Filters.Add(cacheItem);
+                }
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        System.Diagnostics.Debug.WriteLine($"Failed to load cache: {ex.Message}");
+    }
+
+    if (Filters.Count == 0)
+    {
+        Filters.Add(new InputModel());
+    }
+}
+    private void Window_Closing(object? sender, CancelEventArgs e)
+    {
+       SaveCache();
+    }
+
+    private void StopButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_cts != null && !_cts.IsCancellationRequested)
+        {
+            ProgressLabel.Text = "Stopping scraper... please wait.";
+            StopBtn.IsEnabled = false; // Prevent user from clicking STOP multiple times
+            
+            // This triggers the OperationCanceledException in the Start thread
+            _cts.Cancel(); 
         }
     }
 }

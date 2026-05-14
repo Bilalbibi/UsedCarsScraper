@@ -83,10 +83,14 @@ public class ConfigsScraper
             
             make.Models.AddRange(makeModels);
         }
+
+        var fuelTypes = ExtractFilterValues(filters, "filter_enum_fuel_type").Select(v => new SubValue() { Id = v.Id, name = v.Name }).ToDictionary(value => value.Id, value => value.name);
+
         var config = new Config
         {
             Makes = makes,
-            Dates = []
+            Dates = [],
+            FuelTypes = fuelTypes
         };
         try
         {
