@@ -12,8 +12,8 @@ using Org.BouncyCastle.Crypto.Engines;
 using Org.BouncyCastle.Crypto.Modes;
 using Org.BouncyCastle.Crypto.Parameters;
 using UsedCarsScraper.Extensions;
-using UsedCarsScraper.Models;
-
+using UsedCarsScraper.GeneralModels;
+using UsedCarsScraper.StandVirtualModels;
 namespace UsedCarsScraper.Services;
 
 public class StandVirtualService
@@ -24,7 +24,7 @@ public class StandVirtualService
         @"\b(?:19|20)\d{2}\b", 
         RegexOptions.Compiled | RegexOptions.CultureInvariant
     );
-    public async Task Start(List<InputModel> inputs, IProgress<(int Percentage, string Message)> progress = null, CancellationToken cancellationToken = default)
+    public async Task Start(List<StandVirtualInputModel> inputs, IProgress<(int Percentage, string Message)> progress = null, CancellationToken cancellationToken = default)
     {
         var cars = new List<Car>();
         foreach (var input in inputs)
@@ -44,60 +44,60 @@ public class StandVirtualService
         cars.SaveToExcel($"Standvirtual outputs/Standvirtual_cars_{DateTime.Now:dd_MM_yyyy_mm_ss}.xlsx");
     }
 
-    private async Task<List<Car>> StartScraping(InputModel input, IProgress<(int Percentage, string Message)> progress = null, CancellationToken cancellationToken = default)
+    private async Task<List<Car>> StartScraping(StandVirtualInputModel standVirtualInput, IProgress<(int Percentage, string Message)> progress = null, CancellationToken cancellationToken = default)
     {
         var querySb = new StringBuilder();
-        querySb.Append($"/{input.Make.Name?.ToLower()}/");
+        querySb.Append($"/{standVirtualInput.StandVirtualMake.Name?.ToLower()}/");
 
-        if (!string.IsNullOrWhiteSpace(input.FromDate))
+        if (!string.IsNullOrWhiteSpace(standVirtualInput.FromDate))
         {
-            querySb.Append($"desde-{input.FromDate}");
+            querySb.Append($"desde-{standVirtualInput.FromDate}");
         }
 
-        if (!string.IsNullOrWhiteSpace(input.ToDate))
+        if (!string.IsNullOrWhiteSpace(standVirtualInput.ToDate))
         {
-            querySb.Append($"&search%5Bfilter_float_first_registration_year%3Ato%5D={input.ToDate}");
+            querySb.Append($"&search%5Bfilter_float_first_registration_year%3Ato%5D={standVirtualInput.ToDate}");
         }
 
-        querySb.Append($"?search%5Bfilter_enum_fuel_type%5D={input.FuelType}");
-        if (input.Model != null)
+        querySb.Append($"?search%5Bfilter_enum_fuel_type%5D={standVirtualInput.FuelType}");
+        if (standVirtualInput.StandVirtualModel != null)
         {
-            var modelName = input.Model.Name?.ToLower().Replace(" ", "-");
+            var modelName = standVirtualInput.StandVirtualModel.Name?.ToLower().Replace(" ", "-");
             modelName = RemoveDiacritics(modelName);
             querySb.Append($"&search%5Bfilter_enum_engine_code%5D={modelName}");
         }
 
-        if (!string.IsNullOrWhiteSpace(input.BatteryCapacityFrom))
+        if (!string.IsNullOrWhiteSpace(standVirtualInput.BatteryCapacityFrom))
         {
-            querySb.Append($"&search%5Bfilter_float_battery_capacity%3Afrom%5D={input.BatteryCapacityFrom}");
+            querySb.Append($"&search%5Bfilter_float_battery_capacity%3Afrom%5D={standVirtualInput.BatteryCapacityFrom}");
         }
 
-        if (!string.IsNullOrWhiteSpace(input.BatteryCapacityTo))
+        if (!string.IsNullOrWhiteSpace(standVirtualInput.BatteryCapacityTo))
         {
-            querySb.Append($"&search%5Bfilter_float_battery_capacity%3Ato%5D={input.BatteryCapacityTo}");
+            querySb.Append($"&search%5Bfilter_float_battery_capacity%3Ato%5D={standVirtualInput.BatteryCapacityTo}");
         }
 
-        if (!string.IsNullOrWhiteSpace(input.PriceFrom))
+        if (!string.IsNullOrWhiteSpace(standVirtualInput.PriceFrom))
         {
-            querySb.Append($"&search%5Bfilter_float_price%3Afrom%5D={input.PriceFrom}");
+            querySb.Append($"&search%5Bfilter_float_price%3Afrom%5D={standVirtualInput.PriceFrom}");
         }
 
-        if (!string.IsNullOrWhiteSpace(input.PriceTo))
+        if (!string.IsNullOrWhiteSpace(standVirtualInput.PriceTo))
         {
-            querySb.Append($"&search%5Bfilter_float_price%3Ato%5D={input.PriceTo}");
+            querySb.Append($"&search%5Bfilter_float_price%3Ato%5D={standVirtualInput.PriceTo}");
         }
 
-        if (!string.IsNullOrWhiteSpace(input.MileAgeFrom))
+        if (!string.IsNullOrWhiteSpace(standVirtualInput.MileAgeFrom))
         {
-            querySb.Append($"&search%5Bfilter_float_mileage%3Afrom%5D={input.MileAgeFrom}");
+            querySb.Append($"&search%5Bfilter_float_mileage%3Afrom%5D={standVirtualInput.MileAgeFrom}");
         }
 
-        if (!string.IsNullOrWhiteSpace(input.MileAgeTo))
+        if (!string.IsNullOrWhiteSpace(standVirtualInput.MileAgeTo))
         {
-            querySb.Append($"&search%5Bfilter_float_mileage%3Ato%5D={input.MileAgeTo}");
+            querySb.Append($"&search%5Bfilter_float_mileage%3Ato%5D={standVirtualInput.MileAgeTo}");
         }
 
-        if (input.Vat)
+        if (standVirtualInput.Vat)
         {
             querySb.Append($"&search%5Bfilter_enum_tax_deductible%5D=1");
         }
@@ -117,49 +117,49 @@ public class StandVirtualService
         numberOfCars = array[0];
         var filters = "";
         var inputB = new StringBuilder();
-        inputB.Append($"{input.Make}/");
-        inputB.Append($"{input.Model}/");
-        if (!string.IsNullOrEmpty(input.FromDate))
+        inputB.Append($"{standVirtualInput.StandVirtualMake}/");
+        inputB.Append($"{standVirtualInput.StandVirtualModel}/");
+        if (!string.IsNullOrEmpty(standVirtualInput.FromDate))
         {
-            inputB.Append($"{input.FromDate}/");
+            inputB.Append($"{standVirtualInput.FromDate}/");
         }
 
-        if (!string.IsNullOrEmpty(input.ToDate))
+        if (!string.IsNullOrEmpty(standVirtualInput.ToDate))
         {
-            inputB.Append($"{input.ToDate}/");
+            inputB.Append($"{standVirtualInput.ToDate}/");
         }
 
-        if (!string.IsNullOrEmpty(input.PriceFrom))
+        if (!string.IsNullOrEmpty(standVirtualInput.PriceFrom))
         {
-            inputB.Append($"{input.PriceFrom}/");
+            inputB.Append($"{standVirtualInput.PriceFrom}/");
         }
 
-        if (!string.IsNullOrEmpty(input.PriceTo))
+        if (!string.IsNullOrEmpty(standVirtualInput.PriceTo))
         {
-            inputB.Append($"{input.PriceTo}/");
+            inputB.Append($"{standVirtualInput.PriceTo}/");
         }
 
-        if (!string.IsNullOrEmpty(input.MileAgeFrom))
+        if (!string.IsNullOrEmpty(standVirtualInput.MileAgeFrom))
         {
-            inputB.Append($"{input.MileAgeFrom}/");
+            inputB.Append($"{standVirtualInput.MileAgeFrom}/");
         }
 
-        if (!string.IsNullOrEmpty(input.MileAgeTo))
+        if (!string.IsNullOrEmpty(standVirtualInput.MileAgeTo))
         {
-            inputB.Append($"{input.MileAgeTo}/");
+            inputB.Append($"{standVirtualInput.MileAgeTo}/");
         }
 
-        if (!string.IsNullOrEmpty(input.BatteryCapacityFrom))
+        if (!string.IsNullOrEmpty(standVirtualInput.BatteryCapacityFrom))
         {
-            inputB.Append($"{input.BatteryCapacityFrom}/");
+            inputB.Append($"{standVirtualInput.BatteryCapacityFrom}/");
         }
 
-        if (!string.IsNullOrEmpty(input.BatteryCapacityTo))
+        if (!string.IsNullOrEmpty(standVirtualInput.BatteryCapacityTo))
         {
-            inputB.Append($"{input.BatteryCapacityTo}/");
+            inputB.Append($"{standVirtualInput.BatteryCapacityTo}/");
         }
         
-        if (input.Vat)
+        if (standVirtualInput.Vat)
         {
             inputB.Append($"vat selected/");
         }
@@ -201,7 +201,7 @@ public class StandVirtualService
                 cancellationToken.ThrowIfCancellationRequested();
                 var car = await GetDetails(carUrl, cancellationToken);
                 cars.Add(car);
-                var message = $"{cars.Count} cars scraped/{numberOfCars} ==> input: {input.Make}/{input.Model}";
+                var message = $"{cars.Count} cars scraped/{numberOfCars} ==> input: {standVirtualInput.StandVirtualMake}/{standVirtualInput.StandVirtualModel}";
                 if (progress == null || totalCars <= 0) continue;
                 var percentage = (cars.Count * 100) / totalCars;
                 progress.Report((percentage, message));
@@ -210,30 +210,30 @@ public class StandVirtualService
             page++;
         }
         inputB = new StringBuilder();
-        if (input.AdvertisingDate != null)
+        if (standVirtualInput.AdvertisingDate != null)
         {
-            var filteredCars = cars.Where(x => x.AdvertisingDate != null && x.AdvertisingDate >= input.AdvertisingDate)
+            var filteredCars = cars.Where(x => x.AdvertisingDate != null && x.AdvertisingDate >= standVirtualInput.AdvertisingDate)
                 .ToList();
             cars = filteredCars;
-            var date= input.AdvertisingDate.Value.ToString("dd/MM/yyyy");
+            var date= standVirtualInput.AdvertisingDate.Value.ToString("dd/MM/yyyy");
             inputB.Append($"Advertising date: {date}/");
         }
 
-        if (input.RegistrationYear != null)
+        if (standVirtualInput.RegistrationYear != null)
         {
-            inputB.Append($"Registration year: {input.RegistrationYear}/");
+            inputB.Append($"Registration year: {standVirtualInput.RegistrationYear}/");
         }
 
-        if (!string.IsNullOrEmpty(input.CompanySeller))
+        if (!string.IsNullOrEmpty(standVirtualInput.CompanySeller))
         {
-            inputB.Append($"supplier: {input.CompanySeller}/");
+            inputB.Append($"supplier: {standVirtualInput.CompanySeller}/");
         }
         filters=inputB.ToString();
         progress?.Report((0, $"Mains cars found  {cars.Count} without activation those filters: {filters}"));
-        if (!string.IsNullOrEmpty(input.CompanySeller))
+        if (!string.IsNullOrEmpty(standVirtualInput.CompanySeller))
         {
             var filteredCars = cars.Where(x => x.DealerName != null && x.DealerName.Replace(" ", "")
-                .Equals(input.CompanySeller.Replace(" ", ""), StringComparison.CurrentCultureIgnoreCase)).ToList();
+                .Equals(standVirtualInput.CompanySeller.Replace(" ", ""), StringComparison.CurrentCultureIgnoreCase)).ToList();
             cars = filteredCars;
         }
 
@@ -243,9 +243,9 @@ public class StandVirtualService
         //         .ToList();
         //     cars = filteredCars;
         // }
-        if (input.RegistrationYear > 0)
+        if (standVirtualInput.RegistrationYear > 0)
         {
-            var filteredCars = cars.Where(x => x.RegistartionDate >= input.RegistrationYear)
+            var filteredCars = cars.Where(x => x.RegistartionDate >= standVirtualInput.RegistrationYear)
                 .ToList();
             cars = filteredCars;
         }
@@ -481,10 +481,11 @@ public class StandVirtualService
 
         return Convert.FromBase64String(base64);
     }
-    public static int? ExtractYear(string input)
+
+    private static int? ExtractYear(string input)
     {
         if (string.IsNullOrWhiteSpace(input)) return null;
 
-        Match match = YearRegex.Match(input);
-        return match.Success ? int.Parse(match.Value) : (int?)null;
+        var match = YearRegex.Match(input);
+        return match.Success ? int.Parse(match.Value) : null;
     }}

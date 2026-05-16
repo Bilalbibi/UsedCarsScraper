@@ -1,11 +1,11 @@
-﻿namespace UsedCarsScraper.Models
+﻿namespace UsedCarsScraper.StandVirtualModels
 {
-    public class Model
+    public class StandVirtualModel
     {
         public string? Name { get; set; }
         public string SearchKey { get; set; }
         public string? Id { get; set; }
-        public List<SubModel> SubModels { get; set; } = [];
+        public List<StandVirtualSubModel> SubModels { get; set; } = [];
 
         public override string? ToString() => Name;
 
@@ -16,7 +16,7 @@
             if (obj is null) return false;
         
             // Safe type check using pattern matching
-            if (obj is Model other)
+            if (obj is StandVirtualModel other)
             {
                 // Compare by SearchKey (your unique identifier)
                 return SearchKey?.Equals(other.SearchKey, StringComparison.OrdinalIgnoreCase) ?? false;
@@ -25,7 +25,7 @@
             return false;
         }
 
-        protected bool Equals(Model other)
+        protected bool Equals(StandVirtualModel other)
         {
             return string.Equals(Name, other.Name, StringComparison.OrdinalIgnoreCase) 
                    && string.Equals(SearchKey, other.SearchKey, StringComparison.OrdinalIgnoreCase) 

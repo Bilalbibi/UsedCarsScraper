@@ -2,7 +2,7 @@
 using System.Net;
 using Newtonsoft.Json;
 
-namespace UsedCarsScraper.Models
+namespace UsedCarsScraper.GeneralModels
 {
     public static class Utility
     {

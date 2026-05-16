@@ -1,4 +1,4 @@
-namespace UsedCarsScraper.Models;
+namespace UsedCarsScraper.StandVirtualModels;
 
 // Root myDeserializedClass = JsonConvert.DeserializeObject<Root>(myJsonResponse);
     public class Component

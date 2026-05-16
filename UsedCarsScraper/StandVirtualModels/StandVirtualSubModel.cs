@@ -1,6 +1,6 @@
-namespace UsedCarsScraper.Models;
+namespace UsedCarsScraper.StandVirtualModels;
 
-public class SubModel
+public class StandVirtualSubModel
 {
     public string? Name { get; set; }
     public string SearchKey { get; set; }  // e.g., "mercedes-benz:classe-sl:sl-350"
@@ -11,10 +11,10 @@ public class SubModel
 
     public override bool Equals(object obj)
     {
-        return SearchKey?.Equals(((SubModel)obj)?.SearchKey) ?? false;
+        return SearchKey?.Equals(((StandVirtualSubModel)obj)?.SearchKey) ?? false;
     }
 
-    protected bool Equals(SubModel other)
+    protected bool Equals(StandVirtualSubModel other)
     {
         return Name == other.Name && SearchKey == other.SearchKey && Id == other.Id;
     }

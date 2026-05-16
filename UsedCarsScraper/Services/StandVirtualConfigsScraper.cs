@@ -5,14 +5,15 @@ using System.Text.Json;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using UsedCarsScraper.Extensions;
-using UsedCarsScraper.Models;
+using UsedCarsScraper.GeneralModels;
+using UsedCarsScraper.StandVirtualModels;
 
 namespace UsedCarsScraper.Services;
 
-public class ConfigsScraper
+public class StandVirtualConfigsScraper
 {
     private List<Car> _cars = [];
-    private Config _config = new();
+    private StandVirtualConfig _standVirtualConfig = new();
 
     private HttpClient _client =
         new(new HttpClientHandler() { AutomaticDecompression = DecompressionMethods.All, })
@@ -20,7 +21,7 @@ public class ConfigsScraper
             Timeout = TimeSpan.FromMinutes(5)
         };
 
-    public List<InputModel> InputModels = [];
+    public List<StandVirtualInputModel> InputModels = [];
 
     public async Task StandVirtualConfigurationsScraper()
     {
@@ -30,7 +31,7 @@ public class ConfigsScraper
         var filters = root.GetProperty("filters");
         
          var makes = ExtractFilterValues(filters, "filter_enum_make")
-            .Select(v => new Make { Id = v.Id, Name = v.Name, SearchKey = v.Id?.ToLowerInvariant() })
+            .Select(v => new StandVirtualMake { Id = v.Id, Name = v.Name, SearchKey = v.Id?.ToLowerInvariant() })
             .ToList();
 
         // 2. Extract model states (grouped by make condition)
@@ -53,7 +54,7 @@ public class ConfigsScraper
                 .Where(ms => ConditionMatches(ms, "filter_enum_make", make.Id))
                 .SelectMany(ms => ExtractValuesFromState(ms))
                 .DistinctBy(m => m.Id)
-                .Select(v => new Model 
+                .Select(v => new StandVirtualModel 
                 { 
                     Id = v.Id, 
                     Name = v.Name, 
@@ -69,7 +70,7 @@ public class ConfigsScraper
                                 ConditionMatches(ss, "filter_enum_model", model.Id))
                     .SelectMany(ss => ExtractValuesFromState(ss))
                     .DistinctBy(s => s.Id)
-                    .Select(v => new SubModel 
+                    .Select(v => new StandVirtualSubModel 
                     { 
                         Id = v.Id, 
                         Name = v.Name, 
@@ -86,7 +87,7 @@ public class ConfigsScraper
 
         var fuelTypes = ExtractFilterValues(filters, "filter_enum_fuel_type").Select(v => new SubValue() { Id = v.Id, name = v.Name }).ToDictionary(value => value.Id, value => value.name);
 
-        var config = new Config
+        var config = new StandVirtualConfig
         {
             Makes = makes,
             Dates = [],
@@ -97,9 +98,7 @@ public class ConfigsScraper
             var settings = new JsonSerializerSettings
             {
                 Formatting = Formatting.Indented,
-                // Prevents Newtonsoft from trying to replace read-only lists
                 ObjectCreationHandling = ObjectCreationHandling.Reuse,
-                // Ignores null values for cleaner JSON
                 NullValueHandling = NullValueHandling.Ignore
             };
             var jsonConfig = JsonConvert.SerializeObject(config, settings);
@@ -109,64 +108,6 @@ public class ConfigsScraper
         {
             Console.WriteLine(e);
         }
-        #region old filter model for conf
-
-        // var doc = (await _client.Get("https://www.standvirtual.com/",5,[new KeyValuePair<string, string>("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36")])).Text.ToDoc();
-        // var json = doc.DocumentNode.SelectSingleNode("//script[@id='__NEXT_DATA__']").InnerText.Trim();
-        //await File.WriteAllTextAsync("StandVirtual config file", json);
-        // var json = await File.ReadAllTextAsync("StandVirtual config file");
-        //
-        // try
-        // {
-        //     var filers = JsonConvert.DeserializeObject<FilteresModel>(json);
-        //     var makes = new List<Make>();
-        //     var dates = new List<string>();
-        //     var makeModelFilers=filers?.props.pageProps.screenComponentsFilters.states;
-        //     var makesValue=makeModelFilers.FirstOrDefault(x=>x.filterId=="filter_enum_make").values[0].values;
-        //     var modelValues=makeModelFilers.Where(x=>x.filterId=="filter_enum_model").ToList();
-        //     var dateValues=makeModelFilers.FirstOrDefault(x=>x.filterId=="filter_float_first_registration_year:from").values[0].values;
-        //     dateValues.Reverse();
-        //     foreach (var makeFilter in makesValue)  
-        //     {
-        //         var make = new Make
-        //         {
-        //             Name = makeFilter.name,
-        //             Id = makeFilter.Id
-        //         };
-        //         var models= modelValues.FirstOrDefault(x=>x.conditions[0].value.Equals(makeFilter.Id?.ToLower(), StringComparison.CurrentCultureIgnoreCase))?.values[0].values;
-        //         foreach (var model in models)
-        //         {
-        //             make.Models.Add(new Model
-        //             {
-        //                 Name = model.name,
-        //                 Id = model.Id
-        //             });
-        //         }
-        //         makes.Add(make);
-        //     }
-        //
-        //     foreach (var dateValue in dateValues)
-        //     {
-        //         dates.Add(dateValue.name);
-        //     }
-        //
-        //     var config = new Config
-        //     {
-        //         Makes = makes
-        //         , Dates = dates
-        //     };
-        //     var jsonConfig = JsonConvert.SerializeObject(config, Formatting.Indented);
-        //     await File.WriteAllTextAsync("StandVirtual config file", jsonConfig);
-        // }
-        // catch (Exception e)
-        // {
-        //     Console.WriteLine(e);
-        // }
-        // _config.Makes = makes;
-        // _config.Dates = dates;
-        //await File.WriteAllTextAsync("StandVirtual config file", JsonConvert.SerializeObject(_config, Formatting.Indented));
-
-        #endregion
     }
     private static IEnumerable<(string Id, string Name, int? Counter)> ExtractFilterValues(JsonElement filters, string filterId)
     {

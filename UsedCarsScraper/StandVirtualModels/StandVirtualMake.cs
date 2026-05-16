@@ -1,11 +1,11 @@
-﻿namespace UsedCarsScraper.Models
+﻿namespace UsedCarsScraper.StandVirtualModels
 {
-    public class Make
+    public class StandVirtualMake
     {
         public string? SearchKey { get; set; }
         public string? Name { get; set; }
         public string Id { get; set; }
-        public List<Model> Models { get; } = [];
+        public List<StandVirtualModel> Models { get; } = [];
         public override string ToString() => Name;
     }
 }

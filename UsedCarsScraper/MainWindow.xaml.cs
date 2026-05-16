@@ -5,8 +5,10 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using Newtonsoft.Json;
-using UsedCarsScraper.Models;
+using UsedCarsScraper.GeneralModels;
+using UsedCarsScraper.LeBonCoinModels;
 using UsedCarsScraper.Services;
+using UsedCarsScraper.StandVirtualModels;
 
 namespace UsedCarsScraper;
 
@@ -17,10 +19,21 @@ public partial class MainWindow : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    private List<InputModel> inputModels = [];
+    private List<StandVirtualInputModel> inputModels = [];
     private List<Car> cars = [];
     private CancellationTokenSource _cts;
-    public Config? AppConfig
+
+    public StandVirtualConfig? StandVirtualConfig
+    {
+        get;
+        set
+        {
+            field = value;
+            NotifyPropertyChanged();
+        }
+    }
+
+    public LeBonCoinConfig? LbConfig
     {
         get;
         set
@@ -31,24 +44,32 @@ public partial class MainWindow : INotifyPropertyChanged
     }
 
 
-    private ObservableCollection<InputModel> Filters { get; set; }
+    private ObservableCollection<StandVirtualInputModel> StandVirtualFilters { get; set; }
+    public ObservableCollection<LeboncoinInputModel> LbFilters { get; set; } = [];
+
 
     public MainWindow()
     {
         InitializeComponent();
-        if (Filters == null)
-            Filters = [];
-
-        // 2. Set the DataContext (Best Practice)
-
-        // 3. Set the Grid's ItemsSource
+        if (StandVirtualFilters == null)
+            StandVirtualFilters = [];
         try
         {
             StandvirtualGrid.Items.Clear();
+            StandvirtualGrid.ItemsSource = StandVirtualFilters;
+            StandVirtualFilters.Add(new StandVirtualInputModel());
+            DataContext = this;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+        }
 
-            // 4. Set the ItemsSource
-            StandvirtualGrid.ItemsSource = Filters;
-            Filters.Add(new InputModel());
+        try
+        {
+            LeboncoinGrid.Items.Clear();
+            LeboncoinGrid.ItemsSource = LbFilters;
+            LbFilters.Add(new LeboncoinInputModel());
             DataContext = this;
         }
         catch (Exception e)
@@ -57,124 +78,170 @@ public partial class MainWindow : INotifyPropertyChanged
         }
     }
 
-   private async void StartButton_Click(object sender, RoutedEventArgs e)
-{
-    StandvirtualGrid.CommitEdit(DataGridEditingUnit.Row, true);
-    StandvirtualGrid.CancelEdit();
-
-    var models = new List<InputModel>();
-    foreach (var t in Filters)
+    private async void StartButton_Click(object sender, RoutedEventArgs e)
     {
-        models.Add(t);
-    }
+        StandvirtualGrid.CommitEdit(DataGridEditingUnit.Row, true);
+        StandvirtualGrid.CancelEdit();
 
-    var hasNullProp = models.Any(x => x?.Make == null || x?.Model == null);
-    if (hasNullProp)
-    {
-        MessageBox.Show("Please make sure you selected Make and model for each input", "Reminding");
-        return;
-    }
-
-    StartBtn.IsEnabled = false;
-    StopBtn.IsEnabled = true;
-
-    _cts = new CancellationTokenSource();
-    var token = _cts.Token;
-
-    var json = JsonConvert.SerializeObject(models, Formatting.Indented);
-    await File.WriteAllTextAsync($"Standvirtual configs/{DateTime.Now:dd_MM_yyyy_mm_ss}_StandVirtual_config_file.json", json, token);
-
-    var standVirtualService = new StandVirtualService();
-    
-    var progressReporter = new Progress<(int Percentage, string Message)>(info =>
-    {
-        MainProgressBar.Value = info.Percentage;
-        ProgressLabel.Text = info.Message;
-        var timeStamp = DateTime.Now.ToString("HH:mm:ss");
-        LogTextBox.AppendText($"[{timeStamp}] {info.Message}\r\n");
-        LogTextBox.ScrollToEnd();
-    });
-
-    try
-    {
-        do
+        var models = new List<StandVirtualInputModel>();
+        foreach (var t in StandVirtualFilters)
         {
-            // Throw if user clicked Stop while we were waiting
-            token.ThrowIfCancellationRequested(); 
+            models.Add(t);
+        }
 
-            MainProgressBar.Value = 0;
-            var d2 = new DateTime();
-            var d1 = DateTime.Now;
-            var days = 1;
-            
-            if (Daily.IsChecked == true) d2 = DateTime.Now.AddDays(1);
-            if (ThreeDays.IsChecked == true)
+        var hasNullProp = models.Any(x => x?.StandVirtualMake == null || x?.StandVirtualModel == null);
+        if (hasNullProp)
+        {
+            MessageBox.Show("Please make sure you selected Make and model for each input", "Reminding");
+            return;
+        }
+
+        StartBtn.IsEnabled = false;
+        StopBtn.IsEnabled = true;
+
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+
+        var json = JsonConvert.SerializeObject(models, Formatting.Indented);
+        await File.WriteAllTextAsync(
+            $"Standvirtual configs/{DateTime.Now:dd_MM_yyyy_mm_ss}_StandVirtual_config_file.json", json, token);
+
+        var standVirtualService = new StandVirtualService();
+
+        var progressReporter = new Progress<(int Percentage, string Message)>(info =>
+        {
+            MainProgressBar.Value = info.Percentage;
+            ProgressLabel.Text = info.Message;
+            var timeStamp = DateTime.Now.ToString("HH:mm:ss");
+            LogTextBox.AppendText($"[{timeStamp}] {info.Message}\r\n");
+            LogTextBox.ScrollToEnd();
+        });
+
+        try
+        {
+            do
             {
-                days = 3;
-                d2 = DateTime.Now.AddDays(3);
-            }
+                // Throw if user clicked Stop while we were waiting
+                token.ThrowIfCancellationRequested();
 
-            // PASS THE TOKEN TO THE SERVICE
-            await standVirtualService.Start(models, progressReporter, token);
-            
-            MainProgressBar.Value = 100;
-            var nextRunMsg = $"Work done for today. Next run will be {DateTime.Now.AddDays(days):dd/MM/yyyy hh:mm:ss}";
-            ProgressLabel.Text = nextRunMsg;
-            LogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {nextRunMsg}\r\n");
-            var delay = (int)(d2 - d1).TotalSeconds;
+                MainProgressBar.Value = 0;
+                var d2 = new DateTime();
+                var d1 = DateTime.Now;
+                var days = 1;
+
+                if (Daily.IsChecked == true) d2 = DateTime.Now.AddDays(1);
+                if (ThreeDays.IsChecked == true)
+                {
+                    days = 3;
+                    d2 = DateTime.Now.AddDays(3);
+                }
+
+                // PASS THE TOKEN TO THE SERVICE
+                await standVirtualService.Start(models, progressReporter, token);
+
+                MainProgressBar.Value = 100;
+                var nextRunMsg =
+                    $"Work done for today. Next run will be {DateTime.Now.AddDays(days):dd/MM/yyyy hh:mm:ss}";
+                ProgressLabel.Text = nextRunMsg;
+                LogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {nextRunMsg}\r\n");
+                var delay = (int)(d2 - d1).TotalSeconds;
+                StartBtn.IsEnabled = true;
+                await Task.Delay(TimeSpan.FromSeconds(delay), token);
+            } while (true);
+        }
+        catch (OperationCanceledException)
+        {
+            // THIS CATCHES THE STOP BUTTON CLICK
+            ProgressLabel.Text = "Scraping stopped by user.";
+            LogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] Scraping stopped by user.\r\n");
+            MainProgressBar.Value = 0;
+        }
+        catch (Exception ex)
+        {
+            ProgressLabel.Text = $"Error: {ex.Message}";
+            MessageBox.Show(ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            // RESET BUTTONS
             StartBtn.IsEnabled = true;
-            await Task.Delay(TimeSpan.FromSeconds(delay), token);
-            
-        } while (true);
+            StopBtn.IsEnabled = false;
+            _cts?.Dispose();
+            _cts = null;
+        }
     }
-    catch (OperationCanceledException)
-    {
-        // THIS CATCHES THE STOP BUTTON CLICK
-        ProgressLabel.Text = "Scraping stopped by user.";
-        LogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] Scraping stopped by user.\r\n");
-        MainProgressBar.Value = 0;
-    }
-    catch (Exception ex)
-    {
-        ProgressLabel.Text = $"Error: {ex.Message}";
-        MessageBox.Show(ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-    }
-    finally
-    {
-        // RESET BUTTONS
-        StartBtn.IsEnabled = true;
-        StopBtn.IsEnabled = false;
-        _cts?.Dispose();
-        _cts = null;
-    }
-}
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
-        // var configsScraper= new ConfigsScraper();
-        // await configsScraper.StandVirtualConfigurationsScraper();
+        Daily.IsChecked = true;
+        await CreateStandVirtualFolders();
+        await CreateLbnFolders();
+        var svJson = await File.ReadAllTextAsync("StandVirtual config file");
+        StandVirtualConfig = JsonConvert.DeserializeObject<StandVirtualConfig>(svJson);
+    
+        var lbJson = await File.ReadAllTextAsync("Leboncoin config file");
+        LbConfig = JsonConvert.DeserializeObject<LeBonCoinConfig>(lbJson);
+
+        // Notify the UI
+        OnPropertyChanged(nameof(StandVirtualConfig));
+        OnPropertyChanged(nameof(LbConfig));
+
+        // NOW load the caches and populate the grids!
+        LoadAllCaches();
+    }
+
+    private async Task CreateLbnFolders()
+    {
+        // var leBonCoinConfigFiller = new LeBonCoinCarDataExtractor();
+        // await leBonCoinConfigFiller.ExtractCarData();
+        if (!Directory.Exists("leboncoin configs"))
+        {
+            Directory.CreateDirectory("leboncoin configs");
+        }
+
+        if (!Directory.Exists("leboncoin json outputs"))
+        {
+            Directory.CreateDirectory("leboncoin json outputs");
+        }
+
+        if (!Directory.Exists("leboncoin outputs"))
+        {
+            Directory.CreateDirectory("leboncoin outputs");
+        }
+
+        // var json = await File.ReadAllTextAsync("leboncoin config file");
+        // LbConfig = JsonConvert.DeserializeObject<LeBonCoinConfig>(json);
+        // OnPropertyChanged(nameof(LbConfig));
+    }
+
+    private async Task CreateStandVirtualFolders()
+    {
+        // var standVirtualConfigsScraper= new StandVirtualConfigsScraper();
+        // await standVirtualConfigsScraper.StandVirtualConfigurationsScraper();
         // return;
         if (!Directory.Exists("Standvirtual configs"))
         {
             Directory.CreateDirectory("Standvirtual configs");
         }
+
         if (!Directory.Exists("Standvirtual json outputs"))
         {
             Directory.CreateDirectory("Standvirtual json outputs");
         }
+
         if (!Directory.Exists("Standvirtual outputs"))
         {
             Directory.CreateDirectory("Standvirtual outputs");
         }
-        var json = await File.ReadAllTextAsync("StandVirtual config file");
-        AppConfig = JsonConvert.DeserializeObject<Config>(json);
-        OnPropertyChanged(nameof(AppConfig));
-        Daily.IsChecked = true;
 
-        if (File.Exists("last_StandVirtual_config_file"))
-        {
-            LoadCache();
-        }
+        // var json = await File.ReadAllTextAsync("StandVirtual config file");
+        // StandVirtualConfig = JsonConvert.DeserializeObject<StandVirtualConfig>(json);
+        // OnPropertyChanged(nameof(StandVirtualConfig));
+        //
+        // if (File.Exists("last_StandVirtual_config_file"))
+        // {
+        //     LoadCacheForStandVirtual();
+        // }
     }
 
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
@@ -185,137 +252,262 @@ public partial class MainWindow : INotifyPropertyChanged
 
     private void AddRow_Click(object sender, RoutedEventArgs e)
     {
-        Filters.Add(new InputModel());
-
-        StandvirtualGrid.ScrollIntoView(Filters.Last());
+        StandVirtualFilters.Add(new StandVirtualInputModel());
+        StandvirtualGrid.ScrollIntoView(StandVirtualFilters.Last());
     }
-
+    private void LbAddRow_Click(object sender, RoutedEventArgs e)
+    {
+        LbFilters.Add(new LeboncoinInputModel());
+        LeboncoinGrid.ScrollIntoView(LbFilters.Last());
+    }
     private void DeleteRow_Click(object sender, RoutedEventArgs e)
     {
-        if (StandvirtualGrid.SelectedItem is InputModel selectedItem)
+        if (StandvirtualGrid.SelectedItem is StandVirtualInputModel selectedItem)
         {
-            Filters.Remove(selectedItem);
+            StandVirtualFilters.Remove(selectedItem);
         }
-        else if (Filters.Count > 0)
+        else if (StandVirtualFilters.Count > 0)
         {
-            Filters.RemoveAt(Filters.Count - 1);
+            StandVirtualFilters.RemoveAt(StandVirtualFilters.Count - 1);
         }
     }
-
+    private void LbDeleteRow_Click(object sender, RoutedEventArgs e)
+    {
+        if (LeboncoinGrid.SelectedItem is LeboncoinInputModel selectedItem)
+        {
+            LbFilters.Remove(selectedItem);
+        }
+        else if (LbFilters.Count > 0)
+        {
+            LbFilters.RemoveAt(LbFilters.Count - 1);
+        }
+    }
     private void Make_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         var makeCombo = sender as ComboBox;
-        var rowData = makeCombo?.DataContext as InputModel;
+        var rowData = makeCombo?.DataContext as StandVirtualInputModel;
 
         // Check what was actually selected
-        if (makeCombo.SelectedItem is Make selectedMake)
+        if (makeCombo.SelectedItem is StandVirtualMake selectedMake)
         {
-            rowData.Make = selectedMake;
+            rowData.StandVirtualMake = selectedMake;
             rowData.OnPropertyChanged(nameof(rowData.Models));
         }
     }
+
     private void Model_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         var modelCombo = sender as ComboBox;
-        var rowData = modelCombo?.DataContext as InputModel;
-    
+        var rowData = modelCombo?.DataContext as StandVirtualInputModel;
+
         // Ensure we are getting the actual Model object
-        if (modelCombo?.SelectedItem is Model selectedModel && rowData != null)
+        if (modelCombo?.SelectedItem is StandVirtualModel selectedModel && rowData != null)
         {
-            rowData.Model = selectedModel; // Assign full object
-        
-            System.Diagnostics.Debug.WriteLine($"Successfully assigned Model {selectedModel.Name}. SubModels count: {selectedModel.SubModels?.Count ?? 0}");
-        
+            rowData.StandVirtualModel = selectedModel; // Assign full object
+
+            System.Diagnostics.Debug.WriteLine(
+                $"Successfully assigned Model {selectedModel.Name}. SubModels count: {selectedModel.SubModels?.Count ?? 0}");
+
             // Force the SubModel dropdown to refresh
             rowData.OnPropertyChanged(nameof(rowData.SubModels));
         }
     }
-private void SaveCache()
-{
-    try
+    private void SaveAllCaches()
     {
-        // Force the DataGrid to commit any cell currently being edited
-        StandvirtualGrid.CommitEdit(DataGridEditingUnit.Row, true);
-        StandvirtualGrid.CancelEdit();
-
-        // Serialize and save to a local file
-        var json = JsonConvert.SerializeObject(Filters, Formatting.Indented);
-        File.WriteAllText("last_StandVirtual_config_file", json);
+        // Save Standvirtual
+        SaveCache(StandvirtualGrid, StandVirtualFilters, "last_StandVirtual_config_file");
+    
+        // Save Leboncoin
+        SaveCache(LeboncoinGrid, LbFilters, "last_Leboncoin_config_file");
     }
-    catch (Exception ex)
+    private void SaveCache(DataGrid grid, object filtersCollection, string filePath)
     {
-        System.Diagnostics.Debug.WriteLine($"Failed to save cache: {ex.Message}");
+        try
+        {
+            // Force the specific DataGrid to commit edits
+            grid.CommitEdit(DataGridEditingUnit.Row, true);
+            grid.CancelEdit();
+
+            // Serialize and save
+            var json = JsonConvert.SerializeObject(filtersCollection, Formatting.Indented);
+            File.WriteAllText(filePath, json);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to save cache to {filePath}: {ex.Message}");
+        }
+    }
+    private void LoadCache<T>(string filePath, ObservableCollection<T> targetCollection, Action<T> relinkAction) where T : new()
+    {
+        try
+        {
+            if (File.Exists(filePath))
+            {
+                var json = File.ReadAllText(filePath);
+                var cachedFilters = JsonConvert.DeserializeObject<List<T>>(json);
+
+                if (cachedFilters != null && cachedFilters.Count > 0)
+                {
+                    targetCollection.Clear();
+
+                    foreach (var cacheItem in cachedFilters)
+                    {
+                        // Invoke the custom re-linking rules passed into the method
+                        relinkAction?.Invoke(cacheItem);
+                    
+                        targetCollection.Add(cacheItem);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to load cache from {filePath}: {ex.Message}");
+        }
+
+        // Always ensure there is at least one empty row to start
+        if (targetCollection.Count == 0)
+        {
+            targetCollection.Add(new T());
+        }
+    }
+private void LoadAllCaches()
+{
+    // 1. LOAD STANDVIRTUAL
+    if (File.Exists("last_StandVirtual_config_file"))
+    {
+        LoadCache("last_StandVirtual_config_file", StandVirtualFilters, cacheItem =>
+        {
+            var cachedMakeName = cacheItem.StandVirtualMake?.Name;
+            var cachedModelName = cacheItem.StandVirtualModel?.Name;
+            var cachedSubModelName = cacheItem.StandVirtualSubModel?.Name;
+
+            if (cachedMakeName != null && StandVirtualConfig?.Makes != null)
+            {
+                var realMake = StandVirtualConfig.Makes.FirstOrDefault(m => m.Name == cachedMakeName);
+                if (realMake != null)
+                {
+                    cacheItem.StandVirtualMake = realMake;
+                    if (cachedModelName != null)
+                    {
+                        var realModel = realMake.Models.FirstOrDefault(m => m.Name == cachedModelName);
+                        if (realModel != null)
+                        {
+                            cacheItem.StandVirtualModel = realModel;
+                            if (cachedSubModelName != null)
+                            {
+                                var realSubModel = realModel.SubModels.FirstOrDefault(s => s.Name == cachedSubModelName);
+                                if (realSubModel != null) cacheItem.StandVirtualSubModel = realSubModel;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // 2. LOAD LEBONCOIN
+    if (File.Exists("last_Leboncoin_config_file"))
+    {
+        LoadCache("last_Leboncoin_config_file", LbFilters, cacheItem =>
+        {
+            var cachedMakeName = cacheItem.Make?.Name;
+            var cachedModelName = cacheItem.Model?.Name;
+            var cachedFuelName = cacheItem.FuelType?.Name;
+
+            // Re-link Make and Model
+            if (cachedMakeName != null && LbConfig?.BonCoinCarBrands != null)
+            {
+                var realMake = LbConfig.BonCoinCarBrands.FirstOrDefault(m => m.Name == cachedMakeName);
+                if (realMake != null)
+                {
+                    cacheItem.Make = realMake;
+                    if (cachedModelName != null)
+                    {
+                        var realModel = realMake.Models.FirstOrDefault(m => m.Name == cachedModelName);
+                        if (realModel != null) cacheItem.Model = realModel;
+                    }
+                }
+            }
+
+            // Re-link FuelType
+            if (cachedFuelName != null && LbConfig?.Fuels != null)
+            {
+                var realFuel = LbConfig.Fuels.FirstOrDefault(f => f.Name == cachedFuelName);
+                if (realFuel != null) cacheItem.FuelType = realFuel;
+            }
+        });
     }
 }
-
-private void LoadCache()
-{
-    try
+    private void LoadCacheForStandVirtual()
     {
-        if (File.Exists("last_StandVirtual_config_file"))
+        try
         {
-            var json = File.ReadAllText("last_StandVirtual_config_file");
-            var cachedFilters = JsonConvert.DeserializeObject<List<InputModel>>(json);
-
-            if (cachedFilters != null && cachedFilters.Count > 0)
+            if (File.Exists("last_StandVirtual_config_file"))
             {
-                Filters.Clear();
+                var json = File.ReadAllText("last_StandVirtual_config_file");
+                var cachedFilters = JsonConvert.DeserializeObject<List<StandVirtualInputModel>>(json);
 
-                foreach (var cacheItem in cachedFilters)
+                if (cachedFilters != null && cachedFilters.Count > 0)
                 {
-                    // --- THE FIX: Save the names BEFORE the setters wipe them out ---
-                    string cachedMakeName = cacheItem.Make?.Name;
-                    string cachedModelName = cacheItem.Model?.Name;
-                    string cachedSubModelName = cacheItem.SubModel?.Name;
+                    StandVirtualFilters.Clear();
 
-                    if (cachedMakeName != null && AppConfig?.Makes != null)
+                    foreach (var cacheItem in cachedFilters)
                     {
-                        // 1. Find and assign Make (This will trigger Model = null internally)
-                        var realMake = AppConfig.Makes.FirstOrDefault(m => m.Name == cachedMakeName);
-                        if (realMake != null)
+                        // --- THE FIX: Save the names BEFORE the setters wipe them out ---
+                        var cachedMakeName = cacheItem.StandVirtualMake?.Name;
+                        var cachedModelName = cacheItem.StandVirtualModel?.Name;
+                        var cachedSubModelName = cacheItem.StandVirtualSubModel?.Name;
+
+                        if (cachedMakeName != null && StandVirtualConfig?.Makes != null)
                         {
-                            cacheItem.Make = realMake;
-
-                            // 2. Find and assign Model using our saved string (This will trigger SubModel = null)
-                            if (cachedModelName != null)
+                            // 1. Find and assign Make (This will trigger Model = null internally)
+                            var realMake = StandVirtualConfig.Makes.FirstOrDefault(m => m.Name == cachedMakeName);
+                            if (realMake != null)
                             {
-                                var realModel = realMake.Models.FirstOrDefault(m => m.Name == cachedModelName);
-                                if (realModel != null)
-                                {
-                                    cacheItem.Model = realModel;
+                                cacheItem.StandVirtualMake = realMake;
 
-                                    // 3. Find and assign SubModel using our saved string
-                                    if (cachedSubModelName != null)
+                                // 2. Find and assign Model using our saved string (This will trigger SubModel = null)
+                                if (cachedModelName != null)
+                                {
+                                    var realModel = realMake.Models.FirstOrDefault(m => m.Name == cachedModelName);
+                                    if (realModel != null)
                                     {
-                                        var realSubModel = realModel.SubModels.FirstOrDefault(s => s.Name == cachedSubModelName);
-                                        if (realSubModel != null)
+                                        cacheItem.StandVirtualModel = realModel;
+
+                                        // 3. Find and assign SubModel using our saved string
+                                        if (cachedSubModelName != null)
                                         {
-                                            cacheItem.SubModel = realSubModel;
+                                            var realSubModel =
+                                                realModel.SubModels.FirstOrDefault(s => s.Name == cachedSubModelName);
+                                            if (realSubModel != null)
+                                            {
+                                                cacheItem.StandVirtualSubModel = realSubModel;
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    Filters.Add(cacheItem);
+                        StandVirtualFilters.Add(cacheItem);
+                    }
                 }
             }
         }
-    }
-    catch (Exception ex)
-    {
-        System.Diagnostics.Debug.WriteLine($"Failed to load cache: {ex.Message}");
-    }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to load cache: {ex.Message}");
+        }
 
-    if (Filters.Count == 0)
-    {
-        Filters.Add(new InputModel());
+        if (StandVirtualFilters.Count == 0)
+        {
+            StandVirtualFilters.Add(new StandVirtualInputModel());
+        }
     }
-}
     private void Window_Closing(object? sender, CancelEventArgs e)
     {
-       SaveCache();
+        SaveAllCaches();
     }
 
     private void StopButton_Click(object sender, RoutedEventArgs e)
@@ -324,9 +516,20 @@ private void LoadCache()
         {
             ProgressLabel.Text = "Stopping scraper... please wait.";
             StopBtn.IsEnabled = false; // Prevent user from clicking STOP multiple times
-            
+
             // This triggers the OperationCanceledException in the Start thread
-            _cts.Cancel(); 
+            _cts.Cancel();
         }
     }
+
+    private void LbStartButton_Click(object sender, RoutedEventArgs e)
+    {
+        throw new NotImplementedException();
+    }
+
+    private void LbStopButton_Click(object sender, RoutedEventArgs e)
+    {
+        throw new NotImplementedException();
+    }
+    
 }

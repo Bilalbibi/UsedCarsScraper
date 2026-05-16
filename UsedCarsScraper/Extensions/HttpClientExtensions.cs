@@ -4,7 +4,8 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using HtmlAgilityPack;
-using UsedCarsScraper.Models;
+using UsedCarsScraper.GeneralModels;
+using UsedCarsScraper.StandVirtualModels;
 
 namespace UsedCarsScraper.Extensions;
 

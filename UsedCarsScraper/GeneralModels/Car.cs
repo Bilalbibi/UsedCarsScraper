@@ -1,4 +1,4 @@
-﻿namespace UsedCarsScraper.Models
+﻿namespace UsedCarsScraper.GeneralModels
 {
     public class Car
     {
@@ -9,7 +9,7 @@
         public string? Model { get; set; }
         public string? Color { get; set; }
         public string? Price { get; set; }
-        public string Kilometre { get; set; }
+        public string? Kilometre { get; set; }
         public int? RegistartionDate { get; set; }
 
         public DateTime? AdvertisingDate { get; set; }

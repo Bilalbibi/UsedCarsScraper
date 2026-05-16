@@ -1,63 +1,62 @@
 ﻿using System.ComponentModel;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
-namespace UsedCarsScraper.Models
+namespace UsedCarsScraper.StandVirtualModels
 {
-    public class InputModel : INotifyPropertyChanged
+    public class StandVirtualInputModel : INotifyPropertyChanged
     {
         // Use private backing fields so setters can trigger OnPropertyChanged()
-        private Make _make;
+        private StandVirtualMake _standVirtualMake;
 
-        public Make Make
+        public StandVirtualMake StandVirtualMake
         {
-            get => _make;
+            get => _standVirtualMake;
             set
             {
                 // 1. THE GUARD CLAUSE: Prevent WPF from wiping data on UI load
-                if (Equals(_make, value)) return;
+                if (Equals(_standVirtualMake, value)) return;
 
-                _make = value;
-                Model = null; // Now this ONLY triggers when you actually click a NEW Make
+                _standVirtualMake = value;
+                StandVirtualModel = null; // Now this ONLY triggers when you actually click a NEW Make
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(Models));
             }
         }
 
-        public List<Model> Models => Make?.Models ?? new List<Model>();
+        public List<StandVirtualModel> Models => StandVirtualMake?.Models ?? new List<StandVirtualModel>();
 
         // --- UPDATED MODEL LOGIC ---
-        private Model _model;
+        private StandVirtualModel _standVirtualModel;
 
-        public Model Model
+        public StandVirtualModel StandVirtualModel
         {
-            get => _model;
+            get => _standVirtualModel;
             set
             {
                 // 2. THE GUARD CLAUSE
-                if (Equals(_model, value)) return;
+                if (Equals(_standVirtualModel, value)) return;
 
-                _model = value;
-                SubModel = null; // Only wipes SubModel if the Model ACTUALLY changed
+                _standVirtualModel = value;
+                StandVirtualSubModel = null; // Only wipes SubModel if the Model ACTUALLY changed
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(SubModels));
             }
         }
 
         // --- NEW: SUBMODEL LOGIC ---
-        public List<SubModel> SubModels => Model?.SubModels ?? new List<SubModel>();
+        public List<StandVirtualSubModel> SubModels => StandVirtualModel?.SubModels ?? new List<StandVirtualSubModel>();
 
-        private SubModel _subModel;
+        private StandVirtualSubModel _standVirtualSubModel;
 
-        public SubModel SubModel
+        public StandVirtualSubModel StandVirtualSubModel
         {
-            get => _subModel;
+            get => _standVirtualSubModel;
             set
             {
                 // 3. THE GUARD CLAUSE
-                if (Equals(_subModel, value)) return;
+                if (Equals(_standVirtualSubModel, value)) return;
 
-                _subModel = value;
+                _standVirtualSubModel = value;
                 OnPropertyChanged();
             }
         }
