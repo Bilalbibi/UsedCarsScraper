@@ -96,6 +96,7 @@ public class LeBonCoinCarDataExtractor
             cars.Add(new LeBonCoinCarBrand
             {
                 Name = brandLabel.ToUpper(),
+                Value = lookupKey,
                 Models = modelsList
             });
         }

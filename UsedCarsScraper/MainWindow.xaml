@@ -21,8 +21,9 @@
        <SolidColorBrush x:Key="CardBg" Color="#FFFFFF"/>
        <SolidColorBrush x:Key="BorderColor" Color="#E5E7EB"/>
        
-       <!-- Leboncoin Theme Color (Signature Orange) -->
+       <!-- Theme Colors -->
        <SolidColorBrush x:Key="LeboncoinColor" Color="#FF6E14"/>
+       <SolidColorBrush x:Key="LaCentraleColor" Color="#E30613"/>
 
        <Style TargetType="Button">
            <Setter Property="Padding" Value="10,5"/>
@@ -99,7 +100,7 @@
                 </Style>
             </TabControl.Resources>
 
-            <!-- TAB 1: STANDVIRTUAL -->
+            <!-- ======================= TAB 1: STANDVIRTUAL ======================= -->
             <TabItem Header="Standvirtual Scraper 1.01" Tag="">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
@@ -129,13 +130,11 @@
                                   AlternationCount="2"
                                   HorizontalScrollBarVisibility="Auto">
 
-                            <!-- Remove blue selection -->
                             <DataGrid.Resources>
                                 <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="Transparent"/>
                                 <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="Transparent"/>
                             </DataGrid.Resources>
 
-                            <!-- Cell Style -->
                             <DataGrid.CellStyle>
                                 <Style TargetType="DataGridCell">
                                     <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
@@ -152,7 +151,6 @@
                                 </Style>
                             </DataGrid.CellStyle>
 
-                            <!-- Row Style -->
                             <DataGrid.RowStyle>
                                 <Style TargetType="DataGridRow">
                                     <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
@@ -178,7 +176,8 @@
                                                       SelectedItem="{Binding StandVirtualMake}" 
                                                       DisplayMemberPath="Name"
                                                       DataContext="{Binding}" 
-                                                      SelectionChanged="Make_SelectionChanged" />
+                                                      SelectionChanged="Make_SelectionChanged" 
+                                                      VerticalAlignment="Center"/>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
@@ -189,7 +188,8 @@
                                             <ComboBox ItemsSource="{Binding Models}" 
                                                       SelectedItem="{Binding StandVirtualModel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
                                                       DisplayMemberPath="Name"
-                                                      SelectionChanged="Model_SelectionChanged"/>
+                                                      SelectionChanged="Model_SelectionChanged"
+                                                      VerticalAlignment="Center"/>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
@@ -199,7 +199,8 @@
                                         <DataTemplate DataType="{x:Type standVirtualModels:StandVirtualInputModel}">
                                             <ComboBox ItemsSource="{Binding SubModels}" 
                                                       SelectedItem="{Binding StandVirtualSubModel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
-                                                      DisplayMemberPath="Name"/>
+                                                      DisplayMemberPath="Name"
+                                                      VerticalAlignment="Center"/>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
@@ -210,7 +211,8 @@
                                             <ComboBox ItemsSource="{Binding StandVirtualConfig.FuelTypes, ElementName=RootWindow}" 
                                                       SelectedValue="{Binding FuelType, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
                                                       SelectedValuePath="Key"
-                                                      DisplayMemberPath="Value"/>
+                                                      DisplayMemberPath="Value"
+                                                      VerticalAlignment="Center"/>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
@@ -221,6 +223,7 @@
                                 <DataGridTextColumn Header="Max Price" Binding="{Binding PriceTo}" Width="70"/>
                                 <DataGridTextColumn Header="Min KM" Binding="{Binding MileAgeFrom}" Width="65"/>
                                 <DataGridTextColumn Header="Max KM" Binding="{Binding MileAgeTo}" Width="65"/>
+                                
                                 <DataGridTemplateColumn Header="Batt From" Width="70">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate DataType="{x:Type standVirtualModels:StandVirtualInputModel}">
@@ -276,7 +279,151 @@
                 </Grid>
             </TabItem>
 
-            <!-- TAB 2: LEBONCOIN -->
+            <!-- ======================= TAB 2: LA CENTRALE (NEW) ======================= -->
+            <TabItem Header="La Centrale Scraper 1.00" Tag="">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="0" Style="{StaticResource Card}" Margin="0,0,0,10">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="+" Width="30" Click="LcAddRow_Click" Background="{StaticResource LaCentraleColor}"/>
+                            <Button Content="-" Width="30" Click="LcDeleteRow_Click" Background="{StaticResource Danger}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Row="1" Style="{StaticResource Card}">
+                        <DataGrid x:Name="LaCentraleGrid" 
+                                  AutoGenerateColumns="False" 
+                                  CanUserAddRows="False"
+                                  RowHeight="34"
+                                  GridLinesVisibility="All"
+                                  BorderThickness="1"
+                                  BorderBrush="{StaticResource BorderColor}"
+                                  SelectionMode="Extended"
+                                  SelectionUnit="CellOrRowHeader"
+                                  AlternatingRowBackground="#F9FAFB"
+                                  AlternationCount="2"
+                                  HorizontalScrollBarVisibility="Auto">
+
+                            <DataGrid.Resources>
+                                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="Transparent"/>
+                                <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="Transparent"/>
+                            </DataGrid.Resources>
+
+                            <DataGrid.CellStyle>
+                                <Style TargetType="DataGridCell">
+                                    <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
+                                    <Setter Property="BorderThickness" Value="0.5"/>
+                                    <Setter Property="Background" Value="White"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <!-- Soft red highlight for La Centrale -->
+                                            <Setter Property="Background" Value="#FDE8E9"/>
+                                        </Trigger>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#F3F4F6"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </DataGrid.CellStyle>
+
+                            <DataGrid.RowStyle>
+                                <Style TargetType="DataGridRow">
+                                    <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
+                                    <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                                </Style>
+                            </DataGrid.RowStyle>
+
+                            <DataGrid.ColumnHeaderStyle>
+                                <Style TargetType="DataGridColumnHeader">
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                    <Setter Property="Background" Value="#F9FAFB"/>
+                                    <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
+                                    <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                                    <Setter Property="Padding" Value="4,0"/>
+                                </Style>
+                            </DataGrid.ColumnHeaderStyle>
+
+                            <!-- LA CENTRALE COLUMNS -->
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Header="Make" Width="120">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <ComboBox ItemsSource="{Binding LcConfig.Makes, ElementName=RootWindow}"  
+                                                      SelectedItem="{Binding Make, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
+                                                      DisplayMemberPath="Name" 
+                                                      VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <DataGridTemplateColumn Header="Model" Width="120">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <ComboBox ItemsSource="{Binding Models}" 
+                                                      SelectedItem="{Binding Model, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
+                                                      DisplayMemberPath="Name" 
+                                                      VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <DataGridTemplateColumn Header="Energy Type" Width="110">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <ComboBox ItemsSource="{Binding LcConfig.FuelTypes, ElementName=RootWindow}" 
+                                                      SelectedValue="{Binding FuelType, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
+                                                      SelectedValuePath="Key"
+                                                      DisplayMemberPath="Value"
+                                                      VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                
+                                <DataGridTextColumn Header="Min Price" Binding="{Binding PriceFrom}" Width="80"/>
+                                <DataGridTextColumn Header="Max Price" Binding="{Binding PriceTo}" Width="80"/>
+                                <DataGridTextColumn Header="Min KM" Binding="{Binding MileAgeFrom}" Width="75"/>
+                                <DataGridTextColumn Header="Max KM" Binding="{Binding MileAgeTo}" Width="75"/>
+                                <DataGridTextColumn Header="Puissance DIN Min" Binding="{Binding DinPowerFrom}" Width="130"/>
+                                <DataGridTextColumn Header="Puissance DIN Max" Binding="{Binding DinPowerTo}" Width="130"/>
+                                
+                                <DataGridTemplateColumn Header="Advertising date" Width="120">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <DatePicker SelectedDate="{Binding AdvertisingDate, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
+                                                        BorderThickness="0" Background="Transparent" Padding="2"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                
+                                <DataGridTextColumn Header="Reg Year" Binding="{Binding RegistrationYear}" Width="75"/>
+                                <DataGridTextColumn Header="Supplier" Binding="{Binding CompanySeller}" Width="80"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+
+                    <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,15,0,0" Background="#F9FAFB">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <RadioButton x:Name="LcDaily" Content="Daily Scrape" GroupName="LcFreq" Margin="0,0,20,0" VerticalAlignment="Center" IsChecked="True"/>
+                            <RadioButton x:Name="LcThreeDays" Content="Every 3 Days" GroupName="LcFreq" Margin="0,0,20,0" VerticalAlignment="Center"/>
+        
+                            <Button x:Name="LcStartBtn" Content="START SCRAPING" Click="LcStartButton_Click"
+                                    Background="{StaticResource LaCentraleColor}"
+                                    Padding="30,8" FontSize="14" Margin="10,0,0,0"/>
+
+                            <Button x:Name="LcStopBtn" Content="STOP" Click="LcStopButton_Click"
+                                    Background="{StaticResource Danger}"
+                                    Padding="30,8" FontSize="14" Margin="10,0,0,0" IsEnabled="False"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- ======================= TAB 3: LEBONCOIN ======================= -->
             <TabItem Header="Leboncoin Scraper 1.00" Tag="">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
@@ -307,7 +454,6 @@
                                   AlternationCount="2"
                                   HorizontalScrollBarVisibility="Auto">
 
-                            <!-- Reusing the precise styling from Standvirtual grid -->
                             <DataGrid.Resources>
                                 <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="Transparent"/>
                                 <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="Transparent"/>
@@ -348,15 +494,14 @@
                             </DataGrid.ColumnHeaderStyle>
 
                             <DataGrid.Columns>
-                                <!-- Leboncoin Columns -->
                                 <!-- LEBONCOIN MAKE COLUMN -->
                                 <DataGridTemplateColumn Header="Make" Width="120">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate DataType="{x:Type models:LeboncoinInputModel}">
-                                            <!-- Note the change to LbConfig.BonCoinCarBrands -->
                                             <ComboBox ItemsSource="{Binding LbConfig.BonCoinCarBrands, ElementName=RootWindow}"  
                                                       SelectedItem="{Binding Make, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
-                                                      DisplayMemberPath="Name" />
+                                                      DisplayMemberPath="Name" 
+                                                      VerticalAlignment="Center"/>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
@@ -367,7 +512,8 @@
                                         <DataTemplate DataType="{x:Type models:LeboncoinInputModel}">
                                             <ComboBox ItemsSource="{Binding Models}" 
                                                       SelectedItem="{Binding Model, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
-                                                      DisplayMemberPath="Name" />
+                                                      DisplayMemberPath="Name" 
+                                                      VerticalAlignment="Center"/>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
@@ -376,10 +522,10 @@
                                 <DataGridTemplateColumn Header="Energy Type" Width="110">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate DataType="{x:Type models:LeboncoinInputModel}">
-                                            <!-- Note the change to LbConfig.Fuels and binding directly to SelectedItem instead of SelectedValue -->
                                             <ComboBox ItemsSource="{Binding LbConfig.Fuels, ElementName=RootWindow}" 
                                                       SelectedItem="{Binding FuelType, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
-                                                      DisplayMemberPath="Name"/>
+                                                      DisplayMemberPath="Name"
+                                                      VerticalAlignment="Center"/>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
@@ -423,7 +569,7 @@
                 </Grid>
             </TabItem>
 
-            <!-- TAB 3: LOG -->
+            <!-- ======================= TAB 4: LOG ======================= -->
             <TabItem Header="Log" Tag="&#xE8F2;">
                 <Border Style="{StaticResource Card}" Margin="10">
                     <TextBox x:Name="LogTextBox" 

@@ -522,14 +522,106 @@ private void LoadAllCaches()
         }
     }
 
-    private void LbStartButton_Click(object sender, RoutedEventArgs e)
+    private async void LbStartButton_Click(object sender, RoutedEventArgs e)
     {
-        throw new NotImplementedException();
+        LeboncoinGrid.CommitEdit(DataGridEditingUnit.Row, true);
+        LeboncoinGrid.CancelEdit();
+
+        var models = LbFilters.ToList();
+        var hasNullProp = models.Any(x => x?.Make == null);
+        if (hasNullProp)
+        {
+            MessageBox.Show("Please make sure you selected Make for each Leboncoin input", "Reminding");
+            return;
+        }
+
+        LbStartBtn.IsEnabled = false;
+        LbStopBtn.IsEnabled = true;
+
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+
+        var json = JsonConvert.SerializeObject(models, Formatting.Indented);
+        await File.WriteAllTextAsync(
+            $"leboncoin configs/{DateTime.Now:dd_MM_yyyy_HH_mm_ss}_Leboncoin_config_file.json", json, token);
+
+        var leBonCoinService = new LeBonCoinService();
+        var progressReporter = new Progress<(int Percentage, string Message)>(info =>
+        {
+            MainProgressBar.Value = info.Percentage;
+            ProgressLabel.Text = info.Message;
+            LogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {info.Message}\r\n");
+            LogTextBox.ScrollToEnd();
+        });
+
+        try
+        {
+            do
+            {
+                token.ThrowIfCancellationRequested();
+
+                MainProgressBar.Value = 0;
+                var start = DateTime.Now;
+                var days = LbThreeDays.IsChecked == true ? 3 : 1;
+
+                await leBonCoinService.Start(models, progressReporter, token);
+
+                MainProgressBar.Value = 100;
+                var nextRunMsg =
+                    $"Leboncoin work done. Next run will be {DateTime.Now.AddDays(days):dd/MM/yyyy HH:mm:ss}";
+                ProgressLabel.Text = nextRunMsg;
+                LogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {nextRunMsg}\r\n");
+
+                LbStartBtn.IsEnabled = true;
+                await Task.Delay(DateTime.Now.AddDays(days) - start, token);
+            } while (true);
+        }
+        catch (OperationCanceledException)
+        {
+            ProgressLabel.Text = "Leboncoin scraping stopped by user.";
+            LogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] Leboncoin scraping stopped by user.\r\n");
+            MainProgressBar.Value = 0;
+        }
+        catch (Exception ex)
+        {
+            ProgressLabel.Text = $"Leboncoin error: {ex.Message}";
+            MessageBox.Show(ex.Message, "Leboncoin error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            LbStartBtn.IsEnabled = true;
+            LbStopBtn.IsEnabled = false;
+            _cts?.Dispose();
+            _cts = null;
+        }
     }
 
     private void LbStopButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_cts == null || _cts.IsCancellationRequested) return;
+
+        ProgressLabel.Text = "Stopping Leboncoin scraper... please wait.";
+        LbStopBtn.IsEnabled = false;
+        _cts.Cancel();
+    }
+
+    private void LcStopButton_Click(object sender, RoutedEventArgs e)
+    {
         throw new NotImplementedException();
     }
-    
+
+    private void LcStartButton_Click(object sender, RoutedEventArgs e)
+    {
+        throw new NotImplementedException();
+    }
+
+    private void LcAddRow_Click(object sender, RoutedEventArgs e)
+    {
+        throw new NotImplementedException();
+    }
+
+    private void LcDeleteRow_Click(object sender, RoutedEventArgs e)
+    {
+        throw new NotImplementedException();
+    }
 }
