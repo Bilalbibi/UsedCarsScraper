@@ -18,6 +18,7 @@ public class LeBonCoinService
     private const string BaseUrl = "https://www.leboncoin.fr";
     private static readonly Regex YearRegex = new(@"\b(?:19|20)\d{2}\b", RegexOptions.Compiled);
 
+    [Obsolete("Obsolete")]
     public async Task Start(
         List<LeboncoinInputModel> inputs,
         IProgress<(int Percentage, string Message)>? progress = null,
@@ -27,18 +28,19 @@ public class LeBonCoinService
         Directory.CreateDirectory("leboncoin outputs");
 
         progress?.Report((0, "Solving Leboncoin DataDome challenge..."));
-        var cookies = await new DataDomeRaper().DataDomeCookieCatcher();
-
         await PhantomTLS.InitializeAsync();
         await using var client = new PhantomClient(new PhantomClientOptions
         {
             ClientIdentifier = "chrome_120",
-            Proxy = "http://wxxedufq:xt007td5f6dc@64.137.10.153:5803",
-            Timeout = 30000
+            //Proxy = "http://wxxedufq:xt007td5f6dc@64.137.10.153:5803",
+            Timeout = 30000,
+            //Http2 = true
         });
+       var cookies = await new DataDomeRaper().DataDomeCookieCatcher();
+       // var cookies = await GetCookie(client, cancellationToken);
 
         var cars = new List<Car>();
-        foreach (var input in inputs.Where(x => x.Make != null))
+        foreach (var input in inputs.Where(x => true))
         {
             cancellationToken.ThrowIfCancellationRequested();
             cars.AddRange(await StartScraping(client, cookies, input, progress, cancellationToken));
@@ -53,6 +55,31 @@ public class LeBonCoinService
         cars.SaveToExcel($"leboncoin outputs/leboncoin_cars_{DateTime.Now:dd_MM_yyyy_HH_mm_ss}.xlsx");
     }
 
+    private async Task<(string dataDome, string SecureInstall, string route)> GetCookie(PhantomClient client
+        , CancellationToken cancellationToken)
+    {
+        var response = await client.GetAsync("https://www.leboncoin.fr/", new RequestOptions
+        {
+            Headers = new Dictionary<string, string>
+            {
+                ["Accept"] =
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                ["User-Agent"] =
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                ["Accept-Language"] = "en-US,en;q=0.9"
+            },
+        });
+        var doc = new HtmlDocument();
+        doc.LoadHtml(response.Body);
+        var route = doc.DocumentNode.SelectSingleNode("//script[@defer][last()]").GetAttributeValue("src", "");
+        route = route.Replace("/_next/static/", "");
+        var x = route.LastIndexOf('/');
+        route = route[..x];
+        var dataDome = response.Cookies["datadome"];
+        var secureInstall = response.Cookies["__Secure-Install"];
+        return (dataDome, secureInstall, route);
+    }
+
     private async Task<List<Car>> StartScraping(
         PhantomClient client,
         (string dataDome, string SecureInstall, string route) cookies,
@@ -63,25 +90,24 @@ public class LeBonCoinService
         var cars = new List<Car>();
         var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var page = 1;
-        var emptyPages = 0;
-
-        while (emptyPages < 2)
+        while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var url = BuildSearchDataUrl(cookies.route, input, page);
             progress?.Report((0, $"Loading Leboncoin data page {page}: {input.Make?.Name}/{input.Model?.Name}"));
-
             var json = await GetString(client, url, cookies, cancellationToken);
-            var listingUrls = ExtractListingUrls(json);
-            if (listingUrls.Count == 0)
+            if (!json.Contains("leboncoin, site de petites annonces gratuites"))
             {
-                emptyPages++;
-                page++;
-                continue;
+                 cookies = await new DataDomeRaper().DataDomeCookieCatcher();
+                 json = await GetString(client, url, cookies, cancellationToken);
+            }
+            var searchPage = ExtractListingUrls(json);
+            if (searchPage.ListingUrls.Count == 0)
+            {
+                break;
             }
 
-            emptyPages = 0;
-            foreach (var listingUrl in listingUrls)
+            foreach (var listingUrl in searchPage.ListingUrls)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (!seenUrls.Add(listingUrl)) continue;
@@ -91,6 +117,11 @@ public class LeBonCoinService
 
                 cars.Add(car);
                 progress?.Report((0, $"{cars.Count} Leboncoin cars scraped: {input.Make?.Name}/{input.Model?.Name}"));
+            }
+
+            if (!searchPage.HasPivot)
+            {
+                break;
             }
 
             page++;
@@ -145,11 +176,12 @@ public class LeBonCoinService
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var response = await client.GetAsync(url,new RequestOptions
+        var response = await client.GetAsync(url, new RequestOptions
         {
             Headers = new Dictionary<string, string>
             {
-                ["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                ["Accept"] =
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
                 ["cookie"] =
                     $"__Secure-Install={cookies.SecureInstall}; datadome={cookies.dataDome}",
                 ["sec-fetch-mode"] = "cors",
@@ -192,12 +224,14 @@ public class LeBonCoinService
         return $"{min}-{max}";
     }
 
-    private static List<string> ExtractListingUrls(string json)
+    private sealed record SearchPageResult(List<string> ListingUrls, bool HasPivot);
+
+    private static SearchPageResult ExtractListingUrls(string json)
     {
         try
         {
             using var doc = JsonDocument.Parse(json);
-            return EnumerateStrings(doc.RootElement)
+            var listingUrls = EnumerateStrings(doc.RootElement)
                 .Where(x => x.Contains("/ad/voitures/", StringComparison.OrdinalIgnoreCase) ||
                             x.Contains("/voitures/", StringComparison.OrdinalIgnoreCase))
                 .Select(NormalizeUrl)
@@ -205,11 +239,59 @@ public class LeBonCoinService
                             !x.Contains("/recherche", StringComparison.OrdinalIgnoreCase))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
+            var hasPivot = TryFindProperty(doc.RootElement, "pivot", out var pivot) && !IsEmptyJsonValue(pivot);
+
+            return new SearchPageResult(listingUrls, hasPivot);
         }
         catch
         {
-            return [];
+            return new SearchPageResult([], false);
         }
+    }
+
+    private static bool TryFindProperty(JsonElement element, string propertyName, out JsonElement value)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (property.NameEquals(propertyName))
+                {
+                    value = property.Value;
+                    return true;
+                }
+
+                if (TryFindProperty(property.Value, propertyName, out value))
+                {
+                    return true;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                if (TryFindProperty(item, propertyName, out value))
+                {
+                    return true;
+                }
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static bool IsEmptyJsonValue(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.Null or JsonValueKind.Undefined => true,
+            JsonValueKind.String => string.IsNullOrWhiteSpace(element.GetString()),
+            JsonValueKind.Array => !element.EnumerateArray().Any(),
+            JsonValueKind.Object => !element.EnumerateObject().Any(),
+            _ => false
+        };
     }
 
     private static IEnumerable<string> EnumerateStrings(JsonElement element)

@@ -8,6 +8,7 @@ public class DataDomeRaper
     {
         var dic = new Dictionary<string, string>();
         var route = "";
+        var tries = 0;
         try
         {
             do
@@ -28,9 +29,9 @@ public class DataDomeRaper
                         Password = "xt007td5f6dc"
                     }
                 };
-                var context = await browser.NewContextAsync(contextOptions);
-                await context.AddInitScriptAsync(
-                    @"Object.defineProperty(navigator, 'webdriver', {get: () => undefined})");
+                var context = await browser.NewContextAsync();
+                // await context.AddInitScriptAsync(
+                //     @"Object.defineProperty(navigator, 'webdriver', {get: () => undefined})");
                 var page = await context.NewPageAsync();
                 await page.GotoAsync("https://www.leboncoin.fr/");
                 await Task.Delay(5000);
@@ -97,22 +98,35 @@ public class DataDomeRaper
                             "Could not calculate bounding boxes. Check if the iframe container is hidden.");
                     }
 
+                   
+                    var restrictionText = page.Locator("text=Access is temporarily restricted");
+                    var isFound = true;
                     try
                     {
-                        var rnd = new Random();
-                        var timeOut = (float)rnd.Next(5000, 10000);
-                        await page.WaitForSelectorAsync("xpath=//button[text()='Vacances']",
-                            new PageWaitForSelectorOptions { Timeout = timeOut });
+                        await restrictionText.WaitForAsync(new() 
+                        { 
+                            State = WaitForSelectorState.Visible, 
+                            Timeout = 5000 
+                        });
+    
+                        Console.WriteLine("Block page detected! Access is restricted.");
                     }
-                    catch (Exception e)
+                    catch (TimeoutException)
                     {
-                        var rnd = new Random();
-                        var timeOut = rnd.Next(5000, 10000);
-                        await page.CloseAsync();
-                        await Task.Delay(timeOut);
-                        continue;
+                        isFound=false;
                     }
 
+                    if (isFound)
+                    {
+                        if (tries==3)
+                        {
+                            return   ("not found", "not found", route);
+                        }
+                        tries++;
+                        await page.CloseAsync();
+                        await Task.Delay(2000);
+                        continue;
+                    }
                     //p[contains(text(),'restricted')]
                 }
 

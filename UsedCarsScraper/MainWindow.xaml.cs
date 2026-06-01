@@ -21,7 +21,7 @@ public partial class MainWindow : INotifyPropertyChanged
 
     private List<StandVirtualInputModel> inputModels = [];
     private List<Car> cars = [];
-    private CancellationTokenSource _cts;
+    private CancellationTokenSource? _cts;
 
     public StandVirtualConfig? StandVirtualConfig
     {
