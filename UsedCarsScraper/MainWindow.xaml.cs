@@ -1,11 +1,14 @@
 ﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using Newtonsoft.Json;
+using PhantomClientCore;
 using UsedCarsScraper.GeneralModels;
+using UsedCarsScraper.LaCentraleModels;
 using UsedCarsScraper.LeBonCoinModels;
 using UsedCarsScraper.Services;
 using UsedCarsScraper.StandVirtualModels;
@@ -43,9 +46,19 @@ public partial class MainWindow : INotifyPropertyChanged
         }
     }
 
+    public LaCentraleConfig? LcConfig
+    {
+        get;
+        set
+        {
+            field = value;
+            NotifyPropertyChanged();
+        }
+    }
 
     private ObservableCollection<StandVirtualInputModel> StandVirtualFilters { get; set; }
     public ObservableCollection<LeboncoinInputModel> LbFilters { get; set; } = [];
+    public ObservableCollection<LaCentraleInputModel> LcFilters { get; set; } = [];
 
 
     public MainWindow()
@@ -70,6 +83,18 @@ public partial class MainWindow : INotifyPropertyChanged
             LeboncoinGrid.Items.Clear();
             LeboncoinGrid.ItemsSource = LbFilters;
             LbFilters.Add(new LeboncoinInputModel());
+            DataContext = this;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+        }
+
+        try
+        {
+            LaCentraleGrid.Items.Clear();
+            LaCentraleGrid.ItemsSource = LcFilters;
+            LcFilters.Add(new LaCentraleInputModel());
             DataContext = this;
         }
         catch (Exception e)
@@ -181,13 +206,44 @@ public partial class MainWindow : INotifyPropertyChanged
     
         var lbJson = await File.ReadAllTextAsync("Leboncoin config file");
         LbConfig = JsonConvert.DeserializeObject<LeBonCoinConfig>(lbJson);
+        
+        if (File.Exists("LaCentrale config file"))
+        {
+            var lcJson = await File.ReadAllTextAsync("LaCentrale config file");
+            LcConfig = JsonConvert.DeserializeObject<LaCentraleConfig>(lcJson);
+            NormalizeLaCentraleFuelTypes();
+        }
 
         // Notify the UI
         OnPropertyChanged(nameof(StandVirtualConfig));
         OnPropertyChanged(nameof(LbConfig));
+        OnPropertyChanged(nameof(LcConfig));
 
         // NOW load the caches and populate the grids!
         LoadAllCaches();
+    }
+
+    private void NormalizeLaCentraleFuelTypes()
+    {
+        if (LcConfig?.FuelTypes == null)
+        {
+            return;
+        }
+
+        LcConfig.FuelTypes = LcConfig.FuelTypes.ToDictionary(
+            fuel => fuel.Key,
+            fuel => HumanizeFuelType(fuel.Value),
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string HumanizeFuelType(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        return CultureInfo.CurrentCulture.TextInfo.ToTitleCase(value.Replace('_', ' ').ToLowerInvariant());
     }
 
     private async Task CreateLbnFolders()
@@ -319,6 +375,9 @@ public partial class MainWindow : INotifyPropertyChanged
     
         // Save Leboncoin
         SaveCache(LeboncoinGrid, LbFilters, "last_Leboncoin_config_file");
+
+        // Save La Centrale
+        SaveCache(LaCentraleGrid, LcFilters, "last_LaCentrale_config_file");
     }
     private void SaveCache(DataGrid grid, object filtersCollection, string filePath)
     {
@@ -435,6 +494,39 @@ private void LoadAllCaches()
             {
                 var realFuel = LbConfig.Fuels.FirstOrDefault(f => f.Name == cachedFuelName);
                 if (realFuel != null) cacheItem.FuelType = realFuel;
+            }
+        });
+    }
+
+    // 3. LOAD LA CENTRALE
+    if (File.Exists("last_LaCentrale_config_file"))
+    {
+        LoadCache("last_LaCentrale_config_file", LcFilters, cacheItem =>
+        {
+            var cachedMakeName = cacheItem.Make?.Name;
+            var cachedModelName = cacheItem.Model?.Name;
+            var cachedSubModelName = cacheItem.SubModel?.Name;
+
+            if (cachedMakeName != null && LcConfig?.Makes != null)
+            {
+                var realMake = LcConfig.Makes.FirstOrDefault(m => m.Name == cachedMakeName);
+                if (realMake != null)
+                {
+                    cacheItem.Make = realMake;
+                    if (cachedModelName != null)
+                    {
+                        var realModel = realMake.Models.FirstOrDefault(m => m.Name == cachedModelName);
+                        if (realModel != null)
+                        {
+                            cacheItem.Model = realModel;
+                            if (cachedSubModelName != null)
+                            {
+                                var realSubModel = realModel.SubModels.FirstOrDefault(s => s.Name == cachedSubModelName);
+                                if (realSubModel != null) cacheItem.SubModel = realSubModel;
+                            }
+                        }
+                    }
+                }
             }
         });
     }
@@ -610,18 +702,46 @@ private void LoadAllCaches()
         throw new NotImplementedException();
     }
 
-    private void LcStartButton_Click(object sender, RoutedEventArgs e)
+    private async void LcStartButton_Click(object sender, RoutedEventArgs e)
     {
-        throw new NotImplementedException();
+        await PhantomTLS.InitializeAsync();
+        await using var client = new PhantomClient(new PhantomClientOptions
+        {
+            ClientIdentifier = "chrome_120",
+            //Proxy = "http://wxxedufq:xt007td5f6dc@64.137.10.153:5803",
+            Timeout = 30000,
+            //Http2 = true
+        });
+        var response = await client.GetAsync("https://recherche.lacentrale.fr/v5/aggregations?aggregations=VERSION%2CENERGY%2CMIN_AUTONOMY%2CMIN_BATTERY_CAPACITY%2CMAX_BATTERY_CONSUMPTION%2CCUBIC%2CREGION%2CCUSTOMER_FAMILY_CODE%2CTOP_OPTIONS%2CEQUIPMENT_LEVEL%2CEXTERNAL_COLOR%2CINTERNAL_COLOR%2CMAX_CONSUMPTION%2CCRITAIR_MAX%2CGEARBOX%2CGOOD_DEAL_BADGE&families=AUTO%2CUTILITY&makesModelsCommercialNames=BMW%3A%3ASERIE%204%3BBMW%3A%3ASERIE%202", new RequestOptions
+        {
+            Headers = new Dictionary<string, string>
+            {
+                ["Accept"] = "application/json",
+                ["x-api-key"] = "2vHD2GjDJ07RpNvbGYpJG7s6bQNwRNkI9SEkgQnR",
+                
+                ["User-Agent"] =
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                ["Accept-Language"] = "en-US,en;q=0.9"
+            },
+        });
+        Console.WriteLine();
     }
 
     private void LcAddRow_Click(object sender, RoutedEventArgs e)
     {
-        throw new NotImplementedException();
+        LcFilters.Add(new LaCentraleInputModel());
+        LaCentraleGrid.ScrollIntoView(LcFilters.Last());
     }
 
     private void LcDeleteRow_Click(object sender, RoutedEventArgs e)
     {
-        throw new NotImplementedException();
+        if (LaCentraleGrid.SelectedItem is LaCentraleInputModel selectedItem)
+        {
+            LcFilters.Remove(selectedItem);
+        }
+        else if (LcFilters.Count > 0)
+        {
+            LcFilters.RemoveAt(LcFilters.Count - 1);
+        }
     }
 }

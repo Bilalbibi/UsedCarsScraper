@@ -27,7 +27,7 @@ public class LeBonCoinService
         Directory.CreateDirectory("leboncoin json outputs");
         Directory.CreateDirectory("leboncoin outputs");
 
-        progress?.Report((0, "Solving Leboncoin DataDome challenge..."));
+        progress?.Report((2, "Solving Leboncoin DataDome challenge..."));
         await PhantomTLS.InitializeAsync();
         await using var client = new PhantomClient(new PhantomClientOptions
         {
@@ -36,14 +36,27 @@ public class LeBonCoinService
             Timeout = 30000,
             //Http2 = true
         });
-       var cookies = await new DataDomeRaper().DataDomeCookieCatcher();
-       // var cookies = await GetCookie(client, cancellationToken);
+        var cookies = await new DataDomeRaper().DataDomeCookieCatcher("https://www.leboncoin.fr/");
+        // var cookies = await GetCookie(client, cancellationToken);
+        ValidateCookies(cookies);
+        progress?.Report((5, "Leboncoin DataDome cookies ready."));
 
         var cars = new List<Car>();
-        foreach (var input in inputs.Where(x => true))
+        var validInputs = inputs.Where(x => true).ToList();
+        for (var i = 0; i < validInputs.Count; i++)
         {
+            var input = validInputs[i];
             cancellationToken.ThrowIfCancellationRequested();
-            cars.AddRange(await StartScraping(client, cookies, input, progress, cancellationToken));
+            var inputStartPercentage = GetInputProgressPercentage(i, validInputs.Count);
+            var inputEndPercentage = GetInputProgressPercentage(i + 1, validInputs.Count);
+            cars.AddRange(await StartScraping(
+                client,
+                cookies,
+                input,
+                inputStartPercentage,
+                inputEndPercentage,
+                progress,
+                cancellationToken));
             await Task.Delay(1500, cancellationToken);
         }
 
@@ -84,28 +97,42 @@ public class LeBonCoinService
         PhantomClient client,
         (string dataDome, string SecureInstall, string route) cookies,
         LeboncoinInputModel input,
+        int startPercentage,
+        int endPercentage,
         IProgress<(int Percentage, string Message)>? progress,
         CancellationToken cancellationToken)
     {
         var cars = new List<Car>();
         var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var page = 1;
+        var carsFound = 0;
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var url = BuildSearchDataUrl(cookies.route, input, page);
-            progress?.Report((0, $"Loading Leboncoin data page {page}: {input.Make?.Name}/{input.Model?.Name}"));
+            var pageStartPercentage = GetPageProgressPercentage(startPercentage, endPercentage, page, 0, 1);
+            progress?.Report((pageStartPercentage,
+                $"Loading Leboncoin data page {page}: {input.Make?.Name}/{input.Model?.Name}"));
             var json = await GetString(client, url, cookies, cancellationToken);
-            if (!json.Contains("leboncoin, site de petites annonces gratuites"))
-            {
-                 cookies = await new DataDomeRaper().DataDomeCookieCatcher();
-                 json = await GetString(client, url, cookies, cancellationToken);
-            }
+            
             var searchPage = ExtractListingUrls(json);
+            if (!searchPage.IsValidJson)
+            {
+                throw new InvalidOperationException(
+                    $"Leboncoin returned a non-JSON response for {input.Make?.Name}/{input.Model?.Name}. Response starts with: {GetResponsePreview(json)}");
+            }
+
             if (searchPage.ListingUrls.Count == 0)
             {
+                progress?.Report((pageStartPercentage,
+                    $"No Leboncoin listings found for {input.Make?.Name}/{input.Model?.Name} on page {page}."));
                 break;
             }
+
+            var newListingUrls = searchPage.ListingUrls
+                .Where(listingUrl => !seenUrls.Contains(listingUrl))
+                .ToList();
+            carsFound += newListingUrls.Count;
 
             foreach (var listingUrl in searchPage.ListingUrls)
             {
@@ -116,7 +143,14 @@ public class LeBonCoinService
                 if (car == null) continue;
 
                 cars.Add(car);
-                progress?.Report((0, $"{cars.Count} Leboncoin cars scraped: {input.Make?.Name}/{input.Model?.Name}"));
+                var percentage = GetPageProgressPercentage(
+                    startPercentage,
+                    endPercentage,
+                    page,
+                    cars.Count,
+                    Math.Max(cars.Count, carsFound));
+                progress?.Report((percentage,
+                    $"{cars.Count} of {carsFound} Leboncoin cars scraped: {input.Make?.Name}/{input.Model?.Name}"));
             }
 
             if (!searchPage.HasPivot)
@@ -128,8 +162,48 @@ public class LeBonCoinService
         }
 
         cars = ApplyPostFilters(cars, input);
-        progress?.Report((0, $"Leboncoin cars found after filters: {cars.Count}"));
+        progress?.Report((endPercentage, $"{cars.Count} of {carsFound} Leboncoin cars kept after filters."));
         return cars;
+    }
+
+    private static int GetInputProgressPercentage(int inputIndex, int inputCount)
+    {
+        if (inputCount <= 0) return 100;
+        return Math.Clamp(5 + (int)Math.Floor(95 * (inputIndex / (double)inputCount)), 0, 100);
+    }
+
+    private static int GetPageProgressPercentage(
+        int startPercentage,
+        int endPercentage,
+        int page,
+        int completedItems,
+        int totalItems)
+    {
+        var span = Math.Max(1, endPercentage - startPercentage);
+        var pageOffset = Math.Min(span - 1, Math.Max(0, page - 1) * 10);
+        var pageProgress = totalItems <= 0
+            ? 0
+            : (int)Math.Floor(Math.Min(1, completedItems / (double)totalItems) * 10);
+
+        return Math.Clamp(startPercentage + Math.Min(span - 1, pageOffset + pageProgress), startPercentage, endPercentage);
+    }
+
+    private static void ValidateCookies((string dataDome, string SecureInstall, string route) cookies)
+    {
+        if (string.IsNullOrWhiteSpace(cookies.dataDome) ||
+            string.IsNullOrWhiteSpace(cookies.SecureInstall) ||
+            string.IsNullOrWhiteSpace(cookies.route) ||
+            cookies.dataDome.Equals("not found", StringComparison.OrdinalIgnoreCase) ||
+            cookies.SecureInstall.Equals("not found", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Leboncoin DataDome cookies or route were not captured correctly.");
+        }
+    }
+
+    private static string GetResponsePreview(string response)
+    {
+        var clean = Regex.Replace(response, @"\s+", " ").Trim();
+        return clean.Length <= 180 ? clean : clean[..180];
     }
 
     public async Task<Car?> GetDetails(
@@ -224,7 +298,7 @@ public class LeBonCoinService
         return $"{min}-{max}";
     }
 
-    private sealed record SearchPageResult(List<string> ListingUrls, bool HasPivot);
+    private sealed record SearchPageResult(List<string> ListingUrls, bool HasPivot, bool IsValidJson);
 
     private static SearchPageResult ExtractListingUrls(string json)
     {
@@ -241,11 +315,11 @@ public class LeBonCoinService
                 .ToList();
             var hasPivot = TryFindProperty(doc.RootElement, "pivot", out var pivot) && !IsEmptyJsonValue(pivot);
 
-            return new SearchPageResult(listingUrls, hasPivot);
+            return new SearchPageResult(listingUrls, hasPivot, true);
         }
         catch
         {
-            return new SearchPageResult([], false);
+            return new SearchPageResult([], false, false);
         }
     }
 
@@ -464,4 +538,5 @@ public class LeBonCoinService
             ? parsed
             : null;
     }
+
 }

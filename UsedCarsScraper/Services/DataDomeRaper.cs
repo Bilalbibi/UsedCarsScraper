@@ -4,7 +4,7 @@ namespace UsedCarsScraper.Services;
 
 public class DataDomeRaper
 {
-    public async Task<(string dataDome, string SecureInstall, string route)> DataDomeCookieCatcher()
+    public async Task<(string dataDome, string SecureInstall, string route)> DataDomeCookieCatcher(string url)
     {
         var dic = new Dictionary<string, string>();
         var route = "";
@@ -24,7 +24,7 @@ public class DataDomeRaper
                 {
                     Proxy = new Proxy
                     {
-                        Server = "64.137.10.153:5803", // e.g., http://example.com
+                        Server = "84.247.60.125:6095", // e.g., http://example.com
                         Username = "wxxedufq",
                         Password = "xt007td5f6dc"
                     }
@@ -33,7 +33,7 @@ public class DataDomeRaper
                 // await context.AddInitScriptAsync(
                 //     @"Object.defineProperty(navigator, 'webdriver', {get: () => undefined})");
                 var page = await context.NewPageAsync();
-                await page.GotoAsync("https://www.leboncoin.fr/");
+                await page.GotoAsync(url);
                 await Task.Delay(5000);
                 var iframeElement = await page.QuerySelectorAsync("xpath=//iframe[@title='DataDome CAPTCHA']");
                 if (iframeElement != null)
@@ -98,30 +98,31 @@ public class DataDomeRaper
                             "Could not calculate bounding boxes. Check if the iframe container is hidden.");
                     }
 
-                   
-                    var restrictionText = page.Locator("text=Access is temporarily restricted");
-                    var isFound = true;
+                    await Task.Delay(10000);
+                    var restrictionText = page.Locator("xpath=//span[text()='Vacances']");
+                    var isFound = false;
                     try
                     {
-                        await restrictionText.WaitForAsync(new() 
-                        { 
-                            State = WaitForSelectorState.Visible, 
-                            Timeout = 5000 
+                        await restrictionText.WaitForAsync(new()
+                        {
+                            State = WaitForSelectorState.Visible,
+                            Timeout = 10000
                         });
-    
+
                         Console.WriteLine("Block page detected! Access is restricted.");
                     }
                     catch (TimeoutException)
                     {
-                        isFound=false;
+                        isFound = true;
                     }
 
                     if (isFound)
                     {
-                        if (tries==3)
+                        if (tries == 3)
                         {
-                            return   ("not found", "not found", route);
+                            return ("not found", "not found", route);
                         }
+
                         tries++;
                         await page.CloseAsync();
                         await Task.Delay(2000);
