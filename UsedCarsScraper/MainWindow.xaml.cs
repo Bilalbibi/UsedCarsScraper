@@ -6,7 +6,6 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using Newtonsoft.Json;
-using PhantomClientCore;
 using UsedCarsScraper.GeneralModels;
 using UsedCarsScraper.LaCentraleModels;
 using UsedCarsScraper.LeBonCoinModels;
@@ -201,6 +200,7 @@ public partial class MainWindow : INotifyPropertyChanged
         Daily.IsChecked = true;
         await CreateStandVirtualFolders();
         await CreateLbnFolders();
+        CreateLaCentraleFolders();
         var svJson = await File.ReadAllTextAsync("StandVirtual config file");
         StandVirtualConfig = JsonConvert.DeserializeObject<StandVirtualConfig>(svJson);
     
@@ -268,6 +268,13 @@ public partial class MainWindow : INotifyPropertyChanged
         // var json = await File.ReadAllTextAsync("leboncoin config file");
         // LbConfig = JsonConvert.DeserializeObject<LeBonCoinConfig>(json);
         // OnPropertyChanged(nameof(LbConfig));
+    }
+
+    private static void CreateLaCentraleFolders()
+    {
+        Directory.CreateDirectory("lacentral configs");
+        Directory.CreateDirectory("lacentral json outputs");
+        Directory.CreateDirectory("lacentral outputs");
     }
 
     private async Task CreateStandVirtualFolders()
@@ -699,32 +706,85 @@ private void LoadAllCaches()
 
     private void LcStopButton_Click(object sender, RoutedEventArgs e)
     {
-        throw new NotImplementedException();
+        if (_cts == null || _cts.IsCancellationRequested) return;
+
+        ProgressLabel.Text = "Stopping LaCentrale scraper... please wait.";
+        LcStopBtn.IsEnabled = false;
+        _cts.Cancel();
     }
 
     private async void LcStartButton_Click(object sender, RoutedEventArgs e)
     {
-        await PhantomTLS.InitializeAsync();
-        await using var client = new PhantomClient(new PhantomClientOptions
+        LaCentraleGrid.CommitEdit(DataGridEditingUnit.Row, true);
+        LaCentraleGrid.CancelEdit();
+
+        var models = LcFilters.ToList();
+        var hasNullProp = models.Any(x => x.Make == null);
+        if (hasNullProp)
         {
-            ClientIdentifier = "chrome_120",
-            //Proxy = "http://wxxedufq:xt007td5f6dc@64.137.10.153:5803",
-            Timeout = 30000,
-            //Http2 = true
+            MessageBox.Show("Please make sure you selected Make for each LaCentrale input", "Reminding");
+            return;
+        }
+
+        LcStartBtn.IsEnabled = false;
+        LcStopBtn.IsEnabled = true;
+
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+
+        var json = JsonConvert.SerializeObject(models, Formatting.Indented);
+        await File.WriteAllTextAsync(
+            $"lacentral configs/{DateTime.Now:dd_MM_yyyy_HH_mm_ss}_LaCentrale_config_file.json", json, token);
+
+        var laCentraleService = new LaCentraleService();
+        var progressReporter = new Progress<(int Percentage, string Message)>(info =>
+        {
+            MainProgressBar.Value = info.Percentage;
+            ProgressLabel.Text = info.Message;
+            LogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {info.Message}\r\n");
+            LogTextBox.ScrollToEnd();
         });
-        var response = await client.GetAsync("https://recherche.lacentrale.fr/v5/aggregations?aggregations=VERSION%2CENERGY%2CMIN_AUTONOMY%2CMIN_BATTERY_CAPACITY%2CMAX_BATTERY_CONSUMPTION%2CCUBIC%2CREGION%2CCUSTOMER_FAMILY_CODE%2CTOP_OPTIONS%2CEQUIPMENT_LEVEL%2CEXTERNAL_COLOR%2CINTERNAL_COLOR%2CMAX_CONSUMPTION%2CCRITAIR_MAX%2CGEARBOX%2CGOOD_DEAL_BADGE&families=AUTO%2CUTILITY&makesModelsCommercialNames=BMW%3A%3ASERIE%204%3BBMW%3A%3ASERIE%202", new RequestOptions
+
+        try
         {
-            Headers = new Dictionary<string, string>
+            do
             {
-                ["Accept"] = "application/json",
-                ["x-api-key"] = "2vHD2GjDJ07RpNvbGYpJG7s6bQNwRNkI9SEkgQnR",
-                
-                ["User-Agent"] =
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-                ["Accept-Language"] = "en-US,en;q=0.9"
-            },
-        });
-        Console.WriteLine();
+                token.ThrowIfCancellationRequested();
+
+                MainProgressBar.Value = 0;
+                var start = DateTime.Now;
+                var days = LcThreeDays.IsChecked == true ? 3 : 1;
+
+                await laCentraleService.Start(models, progressReporter, token);
+
+                MainProgressBar.Value = 100;
+                var nextRunMsg =
+                    $"LaCentrale work done. Next run will be {DateTime.Now.AddDays(days):dd/MM/yyyy HH:mm:ss}";
+                ProgressLabel.Text = nextRunMsg;
+                LogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {nextRunMsg}\r\n");
+
+                LcStartBtn.IsEnabled = true;
+                await Task.Delay(DateTime.Now.AddDays(days) - start, token);
+            } while (true);
+        }
+        catch (OperationCanceledException)
+        {
+            ProgressLabel.Text = "LaCentrale scraping stopped by user.";
+            LogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] LaCentrale scraping stopped by user.\r\n");
+            MainProgressBar.Value = 0;
+        }
+        catch (Exception ex)
+        {
+            ProgressLabel.Text = $"LaCentrale error: {ex.Message}";
+            MessageBox.Show(ex.Message, "LaCentrale error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            LcStartBtn.IsEnabled = true;
+            LcStopBtn.IsEnabled = false;
+            _cts?.Dispose();
+            _cts = null;
+        }
     }
 
     private void LcAddRow_Click(object sender, RoutedEventArgs e)

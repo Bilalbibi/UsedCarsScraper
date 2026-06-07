@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO;
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using ExcelHelperEx;
@@ -17,6 +18,9 @@ public class LeBonCoinService
 {
     private const string BaseUrl = "https://www.leboncoin.fr";
     private static readonly Regex YearRegex = new(@"\b(?:19|20)\d{2}\b", RegexOptions.Compiled);
+    private static readonly Regex CarIdRegex = new(@"(?<!\d)(\d{6,})(?!\d)", RegexOptions.Compiled);
+    private static readonly Regex PhoneRegex = new(@"\+?\d[\d\s().-]{6,}\d", RegexOptions.Compiled);
+    private LeBonCoinLoginResult? _loginResult;
 
     [Obsolete("Obsolete")]
     public async Task Start(
@@ -36,6 +40,11 @@ public class LeBonCoinService
             Timeout = 30000,
             //Http2 = true
         });
+        var leBonCoinLoginService = new LeBonCoinLoginService();
+       
+        await Task.Delay(10000, cancellationToken);
+        // await leBonCoinLoginService.LogOut();
+        // return;
         var cookies = await new DataDomeRaper().DataDomeCookieCatcher("https://www.leboncoin.fr/");
         // var cookies = await GetCookie(client, cancellationToken);
         ValidateCookies(cookies);
@@ -59,6 +68,14 @@ public class LeBonCoinService
                 cancellationToken));
             await Task.Delay(1500, cancellationToken);
         }
+        var json1 = JsonConvert.SerializeObject(cars, Formatting.Indented);
+        await File.WriteAllTextAsync(
+            $"leboncoin json outputs/leboncoin_cars_json_{DateTime.Now:dd_MM_yyyy_HH_mm_ss}.json",
+            json1,
+            cancellationToken);
+        _loginResult = await leBonCoinLoginService.LoginAsync("bilelproscraper@gmail.com", "Bilou23051984@@",
+            cancellationToken: cancellationToken);
+        await PopulatePhoneNumbers(client, cars, progress, cancellationToken);
 
         var json = JsonConvert.SerializeObject(cars, Formatting.Indented);
         await File.WriteAllTextAsync(
@@ -66,6 +83,7 @@ public class LeBonCoinService
             json,
             cancellationToken);
         cars.SaveToExcel($"leboncoin outputs/leboncoin_cars_{DateTime.Now:dd_MM_yyyy_HH_mm_ss}.xlsx");
+        await leBonCoinLoginService.LogOut();
     }
 
     private async Task<(string dataDome, string SecureInstall, string route)> GetCookie(PhantomClient client
@@ -114,7 +132,7 @@ public class LeBonCoinService
             progress?.Report((pageStartPercentage,
                 $"Loading Leboncoin data page {page}: {input.Make?.Name}/{input.Model?.Name}"));
             var json = await GetString(client, url, cookies, cancellationToken);
-            
+
             var searchPage = ExtractListingUrls(json);
             if (!searchPage.IsValidJson)
             {
@@ -185,7 +203,8 @@ public class LeBonCoinService
             ? 0
             : (int)Math.Floor(Math.Min(1, completedItems / (double)totalItems) * 10);
 
-        return Math.Clamp(startPercentage + Math.Min(span - 1, pageOffset + pageProgress), startPercentage, endPercentage);
+        return Math.Clamp(startPercentage + Math.Min(span - 1, pageOffset + pageProgress), startPercentage,
+            endPercentage);
     }
 
     private static void ValidateCookies((string dataDome, string SecureInstall, string route) cookies)
@@ -222,25 +241,225 @@ public class LeBonCoinService
             var dealerName = ExtractHtmlValue(doc, "Vendeur") ??
                              ExtractHtmlValue(doc, "Nom du vendeur") ??
                              ExtractDealerNameFromNextData(doc);
-
+            var rnd = new Random();
+            // var dealerId = rnd.Next(5000, 10000);
+            // await Task.Delay(dealerId, cancellationToken);
             return new Car
             {
                 Url = carUrl,
-                Phone = null,
                 DealerName = dealerName,
                 Make = ExtractHtmlValue(doc, "Marque"),
                 Model = ExtractHtmlValue(doc, "Modèle"),
                 Color = ExtractHtmlValue(doc, "Couleur") ?? ExtractHtmlValue(doc, "Couleur extérieure"),
-                Price = ExtractPrice(visibleText),
+                Price = ExtractPrice(doc, visibleText),
                 Kilometre = ExtractHtmlValue(doc, "Kilométrage") ?? ExtractHtmlValue(doc, "Kilomètres"),
                 RegistartionDate = ExtractYear(ExtractHtmlValue(doc, "Année") ?? visibleText),
-                AdvertisingDate = ExtractAdvertisingDate(visibleText)
+                AdvertisingDate = ExtractAdvertisingDate(doc, visibleText)
             };
         }
         catch
         {
             return null;
         }
+    }
+
+    private async Task PopulatePhoneNumbers(
+        PhantomClient client,
+        List<Car> cars,
+        IProgress<(int Percentage, string Message)>? progress,
+        CancellationToken cancellationToken)
+    {
+        if (cars.Count == 0)
+        {
+            return;
+        }
+
+        progress?.Report((95, $"Retrieving phone numbers for {cars.Count} Leboncoin cars..."));
+
+        for (var i = 0; i < cars.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var car = cars[i];
+            if (string.IsNullOrWhiteSpace(car.Url))
+            {
+                continue;
+            }
+
+            car.Phone = await GetPhoneNumber(client, car.Url, _loginResult, cancellationToken);
+            //await Task.Delay(20000, cancellationToken);
+            var percentage = 95 + (int)Math.Floor(4 * ((i + 1) / (double)cars.Count));
+            progress?.Report((percentage, $"{i + 1} of {cars.Count} Leboncoin phone numbers retrieved."));
+        }
+    }
+
+    private static async Task<string?> GetPhoneNumber(
+        PhantomClient client,
+        string carUrl,
+        LeBonCoinLoginResult? loginResult,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var carId = ExtractCarId(carUrl);
+
+        var accessToken = ExtractAccessToken(loginResult?.AuthorizerTokenResponse);
+        var datadomeCookie = loginResult?.DatadomeCookie;
+
+        if (string.IsNullOrWhiteSpace(carId) ||
+            string.IsNullOrWhiteSpace(accessToken) ||
+            string.IsNullOrWhiteSpace(datadomeCookie))
+        {
+            return null;
+        }
+
+        var phoneTrackingSessionId = Guid.NewGuid().ToString();
+        var url =
+            $"https://api.leboncoin.fr/api/call-tracking/v1/classified/{Uri.EscapeDataString(carId)}/phone" +
+            $"?phoneTrackingSessionId={Uri.EscapeDataString(phoneTrackingSessionId)}&referrerType=alu";
+
+        var tries = 0;
+        try
+        {
+            do
+            {
+                var response = await client.GetAsync(url, new RequestOptions
+                {
+                    Headers = new Dictionary<string, string>
+                    {
+                        ["authorization"] = $"Bearer {accessToken}",
+                        ["Cookie"] = $"datadome={datadomeCookie}",
+                        ["User-Agent"] =
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+                    }
+                });
+
+                // if (!response.IsSuccess || string.IsNullOrWhiteSpace(response.Body))
+                // {
+                //     return null;
+                // }
+
+                if (response.Status == 429)
+                {
+                    if (tries == 10)
+                    {
+                        return "";
+                    }
+
+                    tries++;
+                    Console.WriteLine($"retry after 429 status code, try number {tries}");
+                    await Task.Delay(60000, cancellationToken);
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(response.Body))
+                {
+                    
+                }
+                Console.WriteLine($"phone number retrieved after {tries} tries.");
+                if (response.Status == 404)
+                {
+                    return "N/A";
+                }
+                return ExtractPhoneNumberFromJson(response.Body);
+            } while (true);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? ExtractCarId(string carUrl)
+    {
+        if (Uri.TryCreate(carUrl, UriKind.Absolute, out var uri))
+        {
+            var pathMatch = CarIdRegex.Matches(uri.AbsolutePath).LastOrDefault();
+            if (pathMatch?.Success == true)
+            {
+                return pathMatch.Groups[1].Value;
+            }
+        }
+
+        var match = CarIdRegex.Matches(carUrl).LastOrDefault();
+        return match?.Success == true ? match.Groups[1].Value : null;
+    }
+
+    private static string? ExtractAccessToken(string? tokenResponse)
+    {
+        if (string.IsNullOrWhiteSpace(tokenResponse))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(tokenResponse);
+            return doc.RootElement.TryGetProperty("access_token", out var accessTokenElement)
+                ? accessTokenElement.GetString()
+                : null;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? ExtractPhoneNumberFromJson(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return FindPhoneNumber(doc.RootElement);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            var match = PhoneRegex.Match(json);
+            return match.Success ? match.Value.Trim() : null;
+        }
+    }
+
+    private static string? FindPhoneNumber(JsonElement element, string? propertyName = null)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    var value = FindPhoneNumber(property.Value, property.Name);
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        return value;
+                    }
+                }
+
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    var value = FindPhoneNumber(item, propertyName);
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        return value;
+                    }
+                }
+
+                break;
+            case JsonValueKind.String:
+                var text = element.GetString();
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    return null;
+                }
+
+                if (propertyName?.Contains("phone", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    return text.Trim();
+                }
+
+                var match = PhoneRegex.Match(text);
+                return match.Success ? match.Value.Trim() : null;
+        }
+
+        return null;
     }
 
     private static async Task<string> GetString(
@@ -280,7 +499,8 @@ public class LeBonCoinService
             ["fuel"] = input.FuelType?.Value,
             ["price"] = BuildRange(input.PriceFrom, input.PriceTo),
             ["mileage"] = BuildRange(input.MileAgeFrom, input.MileAgeTo),
-            ["horse_power_din"] = BuildRange(input.DinPowerFrom, input.DinPowerTo)
+            ["horse_power_din"] = BuildRange(input.DinPowerFrom, input.DinPowerTo),
+            ["regdate"] = $"{input.RegistrationYear}-max"
         };
 
         var query = string.Join("&", parameters
@@ -499,8 +719,8 @@ public class LeBonCoinService
         if (input.AdvertisingDate != null)
             cars = cars.Where(x => x.AdvertisingDate == null || x.AdvertisingDate >= input.AdvertisingDate).ToList();
 
-        if (int.TryParse(input.RegistrationYear, out var registrationYear) && registrationYear > 0)
-            cars = cars.Where(x => x.RegistartionDate == null || x.RegistartionDate >= registrationYear).ToList();
+        // if (int.TryParse(input.RegistrationYear, out var registrationYear) && registrationYear > 0)
+        //     cars = cars.Where(x => x.RegistartionDate == null || x.RegistartionDate >= registrationYear).ToList();
 
         if (!string.IsNullOrWhiteSpace(input.CompanySeller))
             cars = cars.Where(x => x.DealerName != null &&
@@ -518,10 +738,116 @@ public class LeBonCoinService
         return match.Success ? int.Parse(match.Value, CultureInfo.InvariantCulture) : null;
     }
 
-    private static string? ExtractPrice(string text)
+    private static string? ExtractPrice(HtmlDocument doc, string text)
     {
-        var match = Regex.Match(text, @"\b\d[\d\s]*(?:€|EUR)\b", RegexOptions.IgnoreCase);
-        return match.Success ? match.Value.Trim() : null;
+        var priceNode = doc.DocumentNode.SelectSingleNode("//*[@data-qa-id='adview_price']//*[contains(text(), '€')]") ??
+                        doc.DocumentNode.SelectSingleNode("//*[@data-qa-id='adview_price']");
+        var price = NormalizeEuroPrice(priceNode?.InnerText);
+        if (!string.IsNullOrWhiteSpace(price))
+        {
+            return price;
+        }
+
+        var scriptNodes = doc.DocumentNode.SelectNodes("//script[@type='application/ld+json']");
+        if (scriptNodes != null)
+        {
+            foreach (var scriptNode in scriptNodes)
+            {
+                price = ExtractJsonLdPrice(scriptNode.InnerText);
+                if (!string.IsNullOrWhiteSpace(price))
+                {
+                    return price;
+                }
+            }
+        }
+
+        return NormalizeEuroPrice(text);
+    }
+
+    private static string? ExtractJsonLdPrice(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(WebUtility.HtmlDecode(json));
+            return FindOfferPrice(document.RootElement);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? FindOfferPrice(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            if (element.TryGetProperty("offers", out var offers))
+            {
+                var offerPrice = FindOfferPrice(offers);
+                if (!string.IsNullOrWhiteSpace(offerPrice))
+                {
+                    return offerPrice;
+                }
+            }
+
+            if (element.TryGetProperty("price", out var price))
+            {
+                return price.ValueKind switch
+                {
+                    JsonValueKind.Number when price.TryGetDecimal(out var value) => FormatEuroPrice(value),
+                    JsonValueKind.String => NormalizeEuroPrice(price.GetString()),
+                    _ => null
+                };
+            }
+
+            foreach (var property in element.EnumerateObject())
+            {
+                var value = FindOfferPrice(property.Value);
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return value;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                var value = FindOfferPrice(item);
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return value;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string? NormalizeEuroPrice(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var clean = CleanText(text).Replace('\u00A0', ' ').Replace('\u202F', ' ');
+        var match = Regex.Match(clean, @"(?<!\d)(\d{1,3}(?:[\s.]+\d{3})*|\d+)\s*(?:€|EUR)\b", RegexOptions.IgnoreCase);
+        if (!match.Success)
+        {
+            return null;
+        }
+
+        var amount = Regex.Replace(match.Groups[1].Value, @"[\s.]+", " ").Trim();
+        return $"{amount} €";
+    }
+
+    private static string FormatEuroPrice(decimal value)
+    {
+        var amount = value.ToString("N0", CultureInfo.GetCultureInfo("fr-FR"))
+            .Replace('\u00A0', ' ')
+            .Replace('\u202F', ' ');
+        return $"{amount} €";
     }
 
     private static string? ExtractLineAfter(string text, string marker)
@@ -531,12 +857,148 @@ public class LeBonCoinService
         return index >= 0 && index + 1 < lines.Length ? lines[index + 1] : null;
     }
 
-    private static DateTime? ExtractAdvertisingDate(string visibleText)
+    private static DateTime? ExtractAdvertisingDate(HtmlDocument doc, string visibleText)
     {
-        var match = Regex.Match(visibleText, @"\b\d{1,2}/\d{1,2}/\d{4}\b");
-        return match.Success && DateTime.TryParse(match.Value, CultureInfo.GetCultureInfo("fr-FR"), out var parsed)
-            ? parsed
+        var priceNode = doc.DocumentNode.SelectSingleNode("//*[@data-qa-id='adview_price']//*[contains(text(), '€')]") ??
+                        doc.DocumentNode.SelectSingleNode("//*[@data-qa-id='adview_price']");
+
+        var followingDate = ExtractFirstDateAfterPriceNode(priceNode);
+        if (followingDate != null)
+        {
+            return followingDate;
+        }
+
+        var priceContainer = doc.DocumentNode.SelectSingleNode("//*[@data-qa-id='adview_price']/ancestor::section[1]") ??
+                             doc.DocumentNode.SelectSingleNode("//*[@data-qa-id='adview_price']/ancestor::article[1]") ??
+                             doc.DocumentNode.SelectSingleNode("//*[@data-qa-id='adview_price']/ancestor::div[4]");
+
+        var date = ParseAdvertisingDate(ExtractTextAfterPrice(priceContainer?.InnerText, priceNode?.InnerText));
+        if (date != null)
+        {
+            return date;
+        }
+
+        return ParseAdvertisingDate(ExtractTextAfterPrice(visibleText, priceNode?.InnerText));
+    }
+
+    private static DateTime? ExtractFirstDateAfterPriceNode(HtmlNode? priceNode)
+    {
+        var nodes = priceNode?.SelectNodes("following::*[not(self::script) and not(self::style)]");
+        if (nodes == null)
+        {
+            return null;
+        }
+
+        foreach (var node in nodes.Take(30))
+        {
+            var date = ParseAdvertisingDate(node.InnerText);
+            if (date != null)
+            {
+                return date;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ExtractTextAfterPrice(string? sourceText, string? priceText)
+    {
+        if (string.IsNullOrWhiteSpace(sourceText))
+        {
+            return null;
+        }
+
+        var cleanSource = NormalizeWhitespace(sourceText);
+        var normalizedPrice = NormalizeEuroPrice(priceText);
+        if (string.IsNullOrWhiteSpace(normalizedPrice))
+        {
+            return cleanSource;
+        }
+
+        var index = cleanSource.IndexOf(normalizedPrice, StringComparison.OrdinalIgnoreCase);
+        return index < 0 ? cleanSource : cleanSource[(index + normalizedPrice.Length)..];
+    }
+
+    private static DateTime? ParseAdvertisingDate(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var clean = NormalizeWhitespace(text);
+        var relativeMatch = Regex.Match(clean, @"\b(aujourd[’']hui|hier)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (relativeMatch.Success)
+        {
+            var relativeDate = relativeMatch.Groups[1].Value.StartsWith("hier", StringComparison.OrdinalIgnoreCase)
+                ? DateTime.Today.AddDays(-1)
+                : DateTime.Today;
+            return ApplyAdvertisingTime(relativeDate, clean);
+        }
+
+        var numericMatch = Regex.Match(clean, @"\b\d{1,2}/\d{1,2}/\d{4}\b");
+        if (numericMatch.Success &&
+            DateTime.TryParseExact(
+                numericMatch.Value,
+                ["d/M/yyyy", "dd/MM/yyyy"],
+                CultureInfo.GetCultureInfo("fr-FR"),
+                DateTimeStyles.None,
+                out var numericDate))
+        {
+            return ApplyAdvertisingTime(numericDate, clean);
+        }
+
+        var monthMatch = Regex.Match(
+            clean,
+            @"\b\d{1,2}\s+(?:janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|septembre|octobre|novembre|décembre|decembre)\s+\d{4}\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!monthMatch.Success)
+        {
+            return null;
+        }
+
+        var frenchDate = RemoveDiacritics(monthMatch.Value.ToLowerInvariant());
+        return DateTime.TryParseExact(
+            frenchDate,
+            "d MMMM yyyy",
+            CultureInfo.GetCultureInfo("fr-FR"),
+            DateTimeStyles.None,
+            out var monthDate)
+            ? ApplyAdvertisingTime(monthDate, clean)
             : null;
     }
 
+    private static DateTime ApplyAdvertisingTime(DateTime date, string text)
+    {
+        var timeMatch = Regex.Match(text, @"\b(?:à|a)\s*(\d{1,2})(?::|\s*h(?:eures?)?\s*)(\d{2})\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!timeMatch.Success)
+        {
+            return date.Date;
+        }
+
+        var hour = int.Parse(timeMatch.Groups[1].Value, CultureInfo.InvariantCulture);
+        var minute = int.Parse(timeMatch.Groups[2].Value, CultureInfo.InvariantCulture);
+        return hour is >= 0 and <= 23 && minute is >= 0 and <= 59
+            ? date.Date.AddHours(hour).AddMinutes(minute)
+            : date.Date;
+    }
+
+    private static string NormalizeWhitespace(string text) =>
+        CleanText(text).Replace('\u00A0', ' ').Replace('\u202F', ' ');
+
+    private static string RemoveDiacritics(string text)
+    {
+        var normalized = text.Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder();
+
+        foreach (var ch in normalized)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(ch) != UnicodeCategory.NonSpacingMark)
+            {
+                builder.Append(ch);
+            }
+        }
+
+        return builder.ToString().Normalize(NormalizationForm.FormC);
+    }
 }

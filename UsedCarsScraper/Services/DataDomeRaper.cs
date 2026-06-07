@@ -30,8 +30,6 @@ public class DataDomeRaper
                     }
                 };
                 var context = await browser.NewContextAsync();
-                // await context.AddInitScriptAsync(
-                //     @"Object.defineProperty(navigator, 'webdriver', {get: () => undefined})");
                 var page = await context.NewPageAsync();
                 await page.GotoAsync(url);
                 await Task.Delay(5000);
