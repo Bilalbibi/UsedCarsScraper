@@ -1,10 +1,12 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 using Newtonsoft.Json;
 using UsedCarsScraper.GeneralModels;
 using UsedCarsScraper.LaCentraleModels;
@@ -134,8 +136,8 @@ public partial class MainWindow : INotifyPropertyChanged
 
         var progressReporter = new Progress<(int Percentage, string Message)>(info =>
         {
-            MainProgressBar.Value = info.Percentage;
-            ProgressLabel.Text = info.Message;
+            StandvirtualProgressBar.Value = info.Percentage;
+            StandvirtualProgressLabel.Text = info.Message;
             var timeStamp = DateTime.Now.ToString("HH:mm:ss");
             LogTextBox.AppendText($"[{timeStamp}] {info.Message}\r\n");
             LogTextBox.ScrollToEnd();
@@ -148,7 +150,7 @@ public partial class MainWindow : INotifyPropertyChanged
                 // Throw if user clicked Stop while we were waiting
                 token.ThrowIfCancellationRequested();
 
-                MainProgressBar.Value = 0;
+                StandvirtualProgressBar.Value = 0;
                 var d2 = new DateTime();
                 var d1 = DateTime.Now;
                 var days = 1;
@@ -163,10 +165,10 @@ public partial class MainWindow : INotifyPropertyChanged
                 // PASS THE TOKEN TO THE SERVICE
                 await standVirtualService.Start(models, progressReporter, token);
 
-                MainProgressBar.Value = 100;
+                StandvirtualProgressBar.Value = 100;
                 var nextRunMsg =
                     $"Work done for today. Next run will be {DateTime.Now.AddDays(days):dd/MM/yyyy hh:mm:ss}";
-                ProgressLabel.Text = nextRunMsg;
+                StandvirtualProgressLabel.Text = nextRunMsg;
                 LogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {nextRunMsg}\r\n");
                 var delay = (int)(d2 - d1).TotalSeconds;
                 StartBtn.IsEnabled = true;
@@ -176,13 +178,13 @@ public partial class MainWindow : INotifyPropertyChanged
         catch (OperationCanceledException)
         {
             // THIS CATCHES THE STOP BUTTON CLICK
-            ProgressLabel.Text = "Scraping stopped by user.";
+            StandvirtualProgressLabel.Text = "Scraping stopped by user.";
             LogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] Scraping stopped by user.\r\n");
-            MainProgressBar.Value = 0;
+            StandvirtualProgressBar.Value = 0;
         }
         catch (Exception ex)
         {
-            ProgressLabel.Text = $"Error: {ex.Message}";
+            StandvirtualProgressLabel.Text = $"Error: {ex.Message}";
             MessageBox.Show(ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
@@ -325,25 +327,65 @@ public partial class MainWindow : INotifyPropertyChanged
     }
     private void DeleteRow_Click(object sender, RoutedEventArgs e)
     {
-        if (StandvirtualGrid.SelectedItem is StandVirtualInputModel selectedItem)
-        {
-            StandVirtualFilters.Remove(selectedItem);
-        }
-        else if (StandVirtualFilters.Count > 0)
-        {
-            StandVirtualFilters.RemoveAt(StandVirtualFilters.Count - 1);
-        }
+        DeleteSelectedRows(StandvirtualGrid, StandVirtualFilters);
     }
     private void LbDeleteRow_Click(object sender, RoutedEventArgs e)
     {
-        if (LeboncoinGrid.SelectedItem is LeboncoinInputModel selectedItem)
+        DeleteSelectedRows(LeboncoinGrid, LbFilters);
+    }
+
+    private static void DeleteSelectedRows<T>(DataGrid grid, ObservableCollection<T> filters) where T : new()
+    {
+        grid.CommitEdit(DataGridEditingUnit.Row, true);
+        grid.CancelEdit();
+
+        var selectedItems = grid.SelectedItems
+            .OfType<T>()
+            .ToList();
+
+        if (selectedItems.Count > 0)
         {
-            LbFilters.Remove(selectedItem);
+            foreach (var selectedItem in selectedItems)
+            {
+                filters.Remove(selectedItem);
+            }
         }
-        else if (LbFilters.Count > 0)
+        else if (filters.Count > 0)
         {
-            LbFilters.RemoveAt(LbFilters.Count - 1);
+            filters.RemoveAt(filters.Count - 1);
         }
+
+        if (filters.Count == 0)
+        {
+            filters.Add(new T());
+        }
+    }
+    private void RowSelectCheckBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not CheckBox checkBox)
+        {
+            return;
+        }
+
+        var row = FindParent<DataGridRow>(checkBox);
+        if (row == null)
+        {
+            return;
+        }
+
+        row.IsSelected = !row.IsSelected;
+        e.Handled = true;
+    }
+
+    private static T? FindParent<T>(DependencyObject child) where T : DependencyObject
+    {
+        var parent = VisualTreeHelper.GetParent(child);
+        while (parent != null && parent is not T)
+        {
+            parent = VisualTreeHelper.GetParent(parent);
+        }
+
+        return parent as T;
     }
     private void Make_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -613,7 +655,7 @@ private void LoadAllCaches()
     {
         if (_cts != null && !_cts.IsCancellationRequested)
         {
-            ProgressLabel.Text = "Stopping scraper... please wait.";
+            StandvirtualProgressLabel.Text = "Stopping scraper... please wait.";
             StopBtn.IsEnabled = false; // Prevent user from clicking STOP multiple times
 
             // This triggers the OperationCanceledException in the Start thread
@@ -647,8 +689,8 @@ private void LoadAllCaches()
         var leBonCoinService = new LeBonCoinService();
         var progressReporter = new Progress<(int Percentage, string Message)>(info =>
         {
-            MainProgressBar.Value = info.Percentage;
-            ProgressLabel.Text = info.Message;
+            LeboncoinProgressBar.Value = info.Percentage;
+            LeboncoinProgressLabel.Text = info.Message;
             LogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {info.Message}\r\n");
             LogTextBox.ScrollToEnd();
         });
@@ -659,16 +701,16 @@ private void LoadAllCaches()
             {
                 token.ThrowIfCancellationRequested();
 
-                MainProgressBar.Value = 0;
+                LeboncoinProgressBar.Value = 0;
                 var start = DateTime.Now;
                 var days = LbThreeDays.IsChecked == true ? 3 : 1;
 
                 await leBonCoinService.Start(models, progressReporter, token);
 
-                MainProgressBar.Value = 100;
+                LeboncoinProgressBar.Value = 100;
                 var nextRunMsg =
                     $"Leboncoin work done. Next run will be {DateTime.Now.AddDays(days):dd/MM/yyyy HH:mm:ss}";
-                ProgressLabel.Text = nextRunMsg;
+                LeboncoinProgressLabel.Text = nextRunMsg;
                 LogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {nextRunMsg}\r\n");
 
                 LbStartBtn.IsEnabled = true;
@@ -677,13 +719,13 @@ private void LoadAllCaches()
         }
         catch (OperationCanceledException)
         {
-            ProgressLabel.Text = "Leboncoin scraping stopped by user.";
+            LeboncoinProgressLabel.Text = "Leboncoin scraping stopped by user.";
             LogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] Leboncoin scraping stopped by user.\r\n");
-            MainProgressBar.Value = 0;
+            LeboncoinProgressBar.Value = 0;
         }
         catch (Exception ex)
         {
-            ProgressLabel.Text = $"Leboncoin error: {ex.Message}";
+            LeboncoinProgressLabel.Text = $"Leboncoin error: {ex.Message}";
             MessageBox.Show(ex.Message, "Leboncoin error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
@@ -699,7 +741,7 @@ private void LoadAllCaches()
     {
         if (_cts == null || _cts.IsCancellationRequested) return;
 
-        ProgressLabel.Text = "Stopping Leboncoin scraper... please wait.";
+        LeboncoinProgressLabel.Text = "Stopping Leboncoin scraper... please wait.";
         LbStopBtn.IsEnabled = false;
         _cts.Cancel();
     }
@@ -708,7 +750,7 @@ private void LoadAllCaches()
     {
         if (_cts == null || _cts.IsCancellationRequested) return;
 
-        ProgressLabel.Text = "Stopping LaCentrale scraper... please wait.";
+        LaCentraleProgressLabel.Text = "Stopping LaCentrale scraper... please wait.";
         LcStopBtn.IsEnabled = false;
         _cts.Cancel();
     }
@@ -739,8 +781,8 @@ private void LoadAllCaches()
         var laCentraleService = new LaCentraleService();
         var progressReporter = new Progress<(int Percentage, string Message)>(info =>
         {
-            MainProgressBar.Value = info.Percentage;
-            ProgressLabel.Text = info.Message;
+            LaCentraleProgressBar.Value = info.Percentage;
+            LaCentraleProgressLabel.Text = info.Message;
             LogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {info.Message}\r\n");
             LogTextBox.ScrollToEnd();
         });
@@ -751,16 +793,16 @@ private void LoadAllCaches()
             {
                 token.ThrowIfCancellationRequested();
 
-                MainProgressBar.Value = 0;
+                LaCentraleProgressBar.Value = 0;
                 var start = DateTime.Now;
                 var days = LcThreeDays.IsChecked == true ? 3 : 1;
 
                 await laCentraleService.Start(models, progressReporter, token);
 
-                MainProgressBar.Value = 100;
+                LaCentraleProgressBar.Value = 100;
                 var nextRunMsg =
                     $"LaCentrale work done. Next run will be {DateTime.Now.AddDays(days):dd/MM/yyyy HH:mm:ss}";
-                ProgressLabel.Text = nextRunMsg;
+                LaCentraleProgressLabel.Text = nextRunMsg;
                 LogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {nextRunMsg}\r\n");
 
                 LcStartBtn.IsEnabled = true;
@@ -769,13 +811,13 @@ private void LoadAllCaches()
         }
         catch (OperationCanceledException)
         {
-            ProgressLabel.Text = "LaCentrale scraping stopped by user.";
+            LaCentraleProgressLabel.Text = "LaCentrale scraping stopped by user.";
             LogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] LaCentrale scraping stopped by user.\r\n");
-            MainProgressBar.Value = 0;
+            LaCentraleProgressBar.Value = 0;
         }
         catch (Exception ex)
         {
-            ProgressLabel.Text = $"LaCentrale error: {ex.Message}";
+            LaCentraleProgressLabel.Text = $"LaCentrale error: {ex.Message}";
             MessageBox.Show(ex.Message, "LaCentrale error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
@@ -795,13 +837,10 @@ private void LoadAllCaches()
 
     private void LcDeleteRow_Click(object sender, RoutedEventArgs e)
     {
-        if (LaCentraleGrid.SelectedItem is LaCentraleInputModel selectedItem)
-        {
-            LcFilters.Remove(selectedItem);
-        }
-        else if (LcFilters.Count > 0)
-        {
-            LcFilters.RemoveAt(LcFilters.Count - 1);
-        }
+        DeleteSelectedRows(LaCentraleGrid, LcFilters);
     }
 }
+
+
+
+

@@ -326,7 +326,7 @@ public class StandVirtualService
                         {
                             var decryptedPhone = await DecryptAsync(encryptedPhone, uuid);
                             phoneBld.Append($"{decryptedPhone}\r\n");
-                            Console.WriteLine($"Failed to decrypt {encryptedPhone}: {ex.Message}");
+                           // Console.WriteLine($"Failed to decrypt {encryptedPhone}: {ex.Message}");
                         }
                     }
 
